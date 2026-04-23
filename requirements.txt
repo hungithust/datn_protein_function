@@ -1,32 +1,37 @@
 # AMPR: Adaptive Multimodal Protein Representation
-# Python 3.12.x compatible versions (Colab + Kaggle pinned)
+# Python 3.12.x (Colab 3.12.13 / Kaggle 3.12.12)
+#
+# Hai chiến lược cài đặt:
+#   (A) Colab/Kaggle: dùng pre-installed torch/numpy/tensorflow/scipy/sklearn
+#       để tránh xung đột với torchvision/jax/scikit-learn/pandas đã pre-install.
+#       Chỉ cài các package dưới đây bằng pip.
+#   (B) Local env (nếu có): pip install -r requirements.txt — tự động cài đủ.
+#
+# Với Colab/Kaggle, notebook `notebooks/colab_run.ipynb` chạy:
+#   pip install transformers==4.41.2 obonet==1.0.0 biopython==1.84 pyyaml==6.0.1 tqdm==4.66.4
+#   pip install dgl -f https://data.dgl.ai/wheels/torch-2.3/cu121/repo.html
+# và chấp nhận torch/numpy/tensorflow mới hơn mà Colab mặc định cung cấp.
 
-# Core ML
-torch==2.3.1
+# ─── Bắt buộc phải pip install (không có trong Colab) ───
 transformers==4.41.2
-tensorflow==2.16.1
-
-# Graph processing
-dgl==2.1.0
-
-# Bio data formats
 obonet==1.0.0
 biopython==1.84
-
-# Data + utilities
-numpy==1.26.4
-scipy==1.14.0
-pandas==2.2.0
-scikit-learn==1.5.0
-
-# Config + logging
 pyyaml==6.0.1
 tqdm==4.66.4
 
-# Optional: visualization (for notebooks)
-matplotlib==3.8.4
-seaborn==0.13.2
+# DGL: cài bằng wheel riêng trong notebook (xem cell install)
+dgl>=2.1.0
 
-# Optional: testing
-pytest==7.4.4
-pytest-cov==4.1.0
+# ─── Colab pre-installed — chấp nhận version Colab cung cấp ───
+# Không pin cứng vì sẽ gây xung đột với torchvision/torchaudio/jax/shap/opencv
+torch>=2.3.0
+numpy>=1.26.0    # cả 1.26.x và 2.x đều được
+scipy>=1.11.0
+scikit-learn>=1.3.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+tensorflow>=2.16.0
+
+# ─── Optional (chỉ cho thử nghiệm local) ───
+seaborn>=0.13.0
+pytest>=7.4.0
