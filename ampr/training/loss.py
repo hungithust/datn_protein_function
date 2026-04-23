@@ -8,50 +8,49 @@ class AMPRLoss(nn.Module):
     """
     AMPR total loss: BCE + λ·DAG_loss
 
-    DAG_loss enforces True Path Rule: if protein annotates child GO term,
-    must also annotate parent GO term. Penalizes: max(0, P_child - P_parent)²
+    DAG_loss enforces GO True Path Rule: penalizes max(0, P_child - P_parent)²
+    Vectorized over all child-parent pairs — avoids Python loop over n_terms.
     """
 
     def __init__(self, dag_matrix, lambda_dag=0.5):
         """
         Args:
-            dag_matrix: (C, C) adjacency matrix, A[i,j]=1 if j is parent of i
-            lambda_dag: weight of DAG loss term
+            dag_matrix: (C, C) float tensor, A[i,j]=1 if j is parent of i
+            lambda_dag: weight of DAG penalty term
         """
         super().__init__()
         self.register_buffer('dag_matrix', dag_matrix)
         self.lambda_dag = lambda_dag
         self.bce_loss = nn.BCEWithLogitsLoss()
+        self._n_edges = float(dag_matrix.sum().item())
 
     def forward(self, logits, labels):
         """
         Args:
-            logits: (batch, n_terms)
-            labels: (batch, n_terms)
+            logits: (batch, C)
+            labels: (batch, C)
 
         Returns:
-            loss: scalar
-            loss_dict: {bce, dag} for logging
+            loss: scalar tensor
+            loss_dict: {'bce': float, 'dag': float} for logging
         """
-        batch_size = logits.size(0)
-
         bce = self.bce_loss(logits, labels)
 
-        probs = torch.sigmoid(logits)
-
-        dag_penalty = 0.0
-        for i in range(self.dag_matrix.size(0)):
-            parents = (self.dag_matrix[i] > 0).nonzero(as_tuple=True)[0]
-            if len(parents) > 0:
-                p_child = probs[:, i]
-                p_parents = probs[:, parents]
-                violation = torch.relu(p_child.unsqueeze(1) - p_parents)
-                dag_penalty += (violation ** 2).mean()
-
-        if self.dag_matrix.sum() > 0:
-            dag_penalty = dag_penalty / self.dag_matrix.sum()
-        else:
+        if self._n_edges == 0:
             dag_penalty = torch.tensor(0.0, device=logits.device)
+        else:
+            probs = torch.sigmoid(logits)
+
+            # probs_child[b, i, 1]  — expand for broadcasting
+            # probs_parent[b, 1, j] — expand for broadcasting
+            # dag_matrix[i, j] = 1 means j is parent of i
+            # violation[b,i,j] = relu(P_child_i - P_parent_j) * A[i,j]
+            probs_c = probs.unsqueeze(2)                     # (B, C, 1)
+            probs_p = probs.unsqueeze(1)                     # (B, 1, C)
+            mask = self.dag_matrix.unsqueeze(0)              # (1, C, C)
+
+            violation = torch.relu(probs_c - probs_p) * mask # (B, C, C)
+            dag_penalty = (violation ** 2).sum() / (self._n_edges * logits.size(0))
 
         loss = bce + self.lambda_dag * dag_penalty
 

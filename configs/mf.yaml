@@ -11,12 +11,14 @@ data:
   dag_matrix: data/dag_matrices/dag_matrix_mf.npy
   go_emb: data/embeddings/go_emb_mf.npy
   splits: data/splits.json
+  protein_order: data/protein_order.json   # row ordering of .npy files
 
 model:
   d_hidden: 512
   dropout_3di: 0.15
   dropout_ppi: 0.25
   classifier: both      # "linear" | "biobert" | "both"
+  go_emb_dim: 768       # BioBERT output dimension
   go_emb_dim: 768
 
 training:

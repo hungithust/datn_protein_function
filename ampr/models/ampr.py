@@ -102,8 +102,12 @@ class AMPRModel(nn.Module):
         h_ppi = self.proj_ppi(x_ppi)
 
         if self.training:
-            h_3di = h_3di * (torch.rand(batch_size, 1, device=h_3di.device) > self.dropout_3di).float()
-            h_ppi = h_ppi * (torch.rand(batch_size, 1, device=h_ppi.device) > self.dropout_ppi).float()
+            # Inverted modality dropout: scale kept vectors by 1/(1-p) so
+            # expected magnitude is identical at train and eval time.
+            mask_3di = (torch.rand(batch_size, 1, device=h_3di.device) > self.dropout_3di).float()
+            mask_ppi = (torch.rand(batch_size, 1, device=h_ppi.device) > self.dropout_ppi).float()
+            h_3di = h_3di * mask_3di / (1.0 - self.dropout_3di + 1e-8)
+            h_ppi = h_ppi * mask_ppi / (1.0 - self.dropout_ppi + 1e-8)
 
         h_concat = torch.cat([h_seq, h_3di, h_ppi], dim=-1)
         alphas = self.gating(h_concat)

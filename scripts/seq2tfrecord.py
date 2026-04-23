@@ -16,7 +16,6 @@ Usage:
 
 import argparse
 import gzip
-import multiprocessing
 import os
 from pathlib import Path
 
@@ -203,37 +202,26 @@ class SeqTFRecordWriter:
 
         return written, skipped, output_path
 
-    def write_all(self, num_threads=4):
-        """Write all shards in parallel."""
-        print(f"\n[WRITER] Writing {len(self.prot_list)} proteins to {self.num_shards} shards")
-        print(f"[WRITER] Using {num_threads} threads\n")
+    def write_all(self):
+        """Write all shards sequentially with a progress bar.
 
-        try:
-            with multiprocessing.Pool(processes=num_threads) as pool:
-                results = pool.map(self._write_shard, range(self.num_shards))
+        Multiprocessing is intentionally avoided: instance methods cannot be
+        pickled on Colab/Kaggle (spawn-based multiprocessing). Sequential
+        writing is fast enough for ~10k proteins.
+        """
+        print(f"\n[WRITER] Writing {len(self.prot_list)} proteins → {self.num_shards} shards")
 
-            total_written = sum(r[0] for r in results)
-            total_skipped = sum(r[1] for r in results)
+        total_written = 0
+        total_skipped = 0
 
-            print("\n[DONE] TFRecord shards written:")
-            for written, skipped, path in results:
-                print(f"  {Path(path).name}: {written} proteins")
+        for shard_idx in tqdm(range(self.num_shards), desc="Shards"):
+            written, skipped, path = self._write_shard(shard_idx)
+            total_written += written
+            total_skipped += skipped
+            print(f"  [SHARD {shard_idx+1:02d}/{self.num_shards:02d}] "
+                  f"{written} written, {skipped} skipped → {Path(path).name}")
 
-            print(f"\n[STATS] Total: {total_written} written, {total_skipped} skipped")
-
-        except Exception as e:
-            print(f"[ERROR] Multiprocessing failed: {e}")
-            print("[FALLBACK] Writing sequentially...\n")
-
-            total_written = 0
-            total_skipped = 0
-
-            for shard_idx in tqdm(range(self.num_shards), desc="Shards"):
-                written, skipped, path = self._write_shard(shard_idx)
-                total_written += written
-                total_skipped += skipped
-
-            print(f"[DONE] Total: {total_written} written, {total_skipped} skipped")
+        print(f"\n[DONE] Total: {total_written} written, {total_skipped} skipped (missing sequence/annotation)")
 
 
 def main():
@@ -243,7 +231,6 @@ def main():
     parser.add_argument('--split', type=str, required=True, help='Path to train/valid/test protein ID list')
     parser.add_argument('--out_prefix', type=str, required=True, help='Output TFRecord prefix')
     parser.add_argument('--num_shards', type=int, default=10, help='Number of TFRecord shards')
-    parser.add_argument('--num_threads', type=int, default=4, help='Number of parallel threads')
 
     args = parser.parse_args()
 
@@ -264,7 +251,7 @@ def main():
     print(f"[SPLIT] {len(prot_list)} proteins in split")
 
     writer = SeqTFRecordWriter(prot_list, prot2annot, goterms, sequences, args.out_prefix, args.num_shards)
-    writer.write_all(num_threads=args.num_threads)
+    writer.write_all()
 
     print(f"\n[SUCCESS] Output prefix: {args.out_prefix}")
     print(f"[SUCCESS] Output files: {args.out_prefix}_00-of-{args.num_shards:02d}.tfrecords ... "
