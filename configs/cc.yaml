@@ -1,0 +1,33 @@
+# AMPR Config: Cellular Component (CC) branch
+
+branch: CC
+n_terms: 320
+
+data:
+  seq_emb: data/embeddings/seq_embeddings.npy
+  struct_emb: data/embeddings/struct_embeddings.npy
+  ppi_emb: data/embeddings/ppi_embeddings.npy
+  labels: data/labels_cc.npy
+  dag_matrix: data/dag_matrices/dag_matrix_cc.npy
+  go_emb: data/embeddings/go_emb_cc.npy
+  splits: data/splits.json
+
+model:
+  d_hidden: 512
+  dropout_3di: 0.15
+  dropout_ppi: 0.25
+  classifier: both
+  go_emb_dim: 768
+
+training:
+  epochs: 50
+  batch_size: 256
+  lr: 1.0e-3
+  lambda_dag: 0.5
+  seed: 42
+  device: auto
+
+output:
+  checkpoint_dir: checkpoints/cc/
+  log_file: logs/cc_train.log
+  results_file: results/cc_predictions.tsv

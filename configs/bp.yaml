@@ -1,0 +1,33 @@
+# AMPR Config: Biological Process (BP) branch
+
+branch: BP
+n_terms: 1943
+
+data:
+  seq_emb: data/embeddings/seq_embeddings.npy
+  struct_emb: data/embeddings/struct_embeddings.npy
+  ppi_emb: data/embeddings/ppi_embeddings.npy
+  labels: data/labels_bp.npy
+  dag_matrix: data/dag_matrices/dag_matrix_bp.npy
+  go_emb: data/embeddings/go_emb_bp.npy
+  splits: data/splits.json
+
+model:
+  d_hidden: 512
+  dropout_3di: 0.15
+  dropout_ppi: 0.25
+  classifier: both
+  go_emb_dim: 768
+
+training:
+  epochs: 50
+  batch_size: 256
+  lr: 1.0e-3
+  lambda_dag: 0.5
+  seed: 42
+  device: auto
+
+output:
+  checkpoint_dir: checkpoints/bp/
+  log_file: logs/bp_train.log
+  results_file: results/bp_predictions.tsv
