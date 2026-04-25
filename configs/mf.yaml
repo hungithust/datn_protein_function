@@ -19,7 +19,7 @@ model:
   dropout_ppi: 0.25
   classifier: both      # "linear" | "biobert" | "both"
   go_emb_dim: 768       # BioBERT output dimension
-  go_emb_dim: 768
+  ppi_dim: 256          # DeepGO graph_new_embeddings.pkl: 256-dim
 
 training:
   epochs: 50

@@ -80,6 +80,7 @@ def main():
         dropout_ppi=config['model']['dropout_ppi'],
         classifier=config['model']['classifier'],
         go_emb_dim=config['model']['go_emb_dim'],
+        ppi_dim=config['model'].get('ppi_dim', 128),
     )
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     log.info(f"Model trainable params: {n_params:,}")

@@ -56,7 +56,7 @@ class AMPRModel(nn.Module):
     """
 
     def __init__(self, d_hidden=512, n_terms=489, dropout_3di=0.15, dropout_ppi=0.25,
-                 classifier='both', go_emb_dim=768):
+                 classifier='both', go_emb_dim=768, ppi_dim=128):
 
         super().__init__()
 
@@ -68,7 +68,7 @@ class AMPRModel(nn.Module):
 
         self.proj_seq = ProjectionHead(1024, d_hidden)
         self.proj_3di = ProjectionHead(1024, d_hidden)
-        self.proj_ppi = ProjectionHead(128, d_hidden)
+        self.proj_ppi = ProjectionHead(ppi_dim, d_hidden)
 
         self.gating = GatingNetwork(d_hidden)
 
