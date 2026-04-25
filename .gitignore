@@ -1,0 +1,4 @@
+.gitignore
+kaggle.json
+struct_embeddings.npy
+checkpoints/

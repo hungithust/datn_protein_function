@@ -23,7 +23,7 @@ model:
 
 training:
   epochs: 50
-  batch_size: 256
+  batch_size: 128
   lr: 1.0e-3
   lambda_dag: 0.5
   seed: 42
