@@ -54,8 +54,8 @@ def compute_fmax(y_true, y_pred):
 
 def compute_auprc(y_true, y_pred):
     """
-    Mean AUPRC across GO terms that have ≥1 positive sample.
-    Equivalent to macro-averaged AUPR.
+    Macro-averaged AUPR: mean per-term AP across GO terms with ≥1 positive sample.
+    Robust to rare terms.
     """
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
@@ -66,6 +66,23 @@ def compute_auprc(y_true, y_pred):
         if y_true[:, i].sum() > 0
     ]
     return float(np.mean(scores)) if scores else 0.0
+
+
+def compute_micro_auprc(y_true, y_pred):
+    """
+    Micro-averaged AUPR — DeepFRI's metric (Gligorijević et al. 2021).
+    Equivalent to sklearn average_precision_score(..., average='micro')
+    on the subset of terms that have ≥1 positive sample.
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    valid = [i for i in range(y_true.shape[1]) if y_true[:, i].sum() > 0]
+    if not valid:
+        return 0.0
+    return float(average_precision_score(
+        y_true[:, valid], y_pred[:, valid], average='micro'
+    ))
 
 
 def compute_smin(y_true, y_pred, term_ic):
@@ -152,13 +169,22 @@ def compute_coverage(y_true, y_pred, threshold):
 
 def compute_all_metrics(y_true, y_pred, term_ic):
     """
-    Full CAFA-style evaluation suite.
+    Full CAFA-style evaluation suite (matches DeepFRI metrics).
 
     Returns dict with:
-        fmax, fmax_threshold, auprc, smin, micro_auroc, macro_auroc, coverage
+        fmax, fmax_threshold,
+        auprc_micro  (DeepFRI metric — sklearn average='micro'),
+        auprc_macro  (mean per-term AP — robust to rare terms),
+        smin,
+        micro_auroc, macro_auroc, coverage,
+        n_proteins, n_terms_with_positives
     """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
     fmax, threshold = compute_fmax(y_true, y_pred)
-    auprc = compute_auprc(y_true, y_pred)
+    auprc_macro = compute_auprc(y_true, y_pred)
+    auprc_micro = compute_micro_auprc(y_true, y_pred)
     smin = compute_smin(y_true, y_pred, term_ic)
     micro_auroc, macro_auroc = compute_auroc(y_true, y_pred)
     coverage = compute_coverage(y_true, y_pred, threshold)
@@ -166,9 +192,12 @@ def compute_all_metrics(y_true, y_pred, term_ic):
     return {
         'fmax': fmax,
         'fmax_threshold': threshold,
-        'auprc': auprc,
+        'auprc_micro': auprc_micro,
+        'auprc_macro': auprc_macro,
         'smin': smin,
         'micro_auroc': micro_auroc,
         'macro_auroc': macro_auroc,
         'coverage': coverage,
+        'n_proteins': int(y_true.shape[0]),
+        'n_terms_with_positives': int((y_true.sum(axis=0) > 0).sum()),
     }

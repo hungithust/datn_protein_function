@@ -2,3 +2,4 @@
 kaggle.json
 struct_embeddings.npy
 checkpoints/
+results/

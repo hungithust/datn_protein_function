@@ -9,9 +9,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import OneCycleLR
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from ampr.data.dataset import get_dataloaders
+from ampr.data.dataset import AMPRDataset, get_dataloaders
 from ampr.evaluation.metrics import compute_fmax, compute_all_metrics
 from ampr.training.loss import AMPRLoss
 
@@ -21,8 +22,14 @@ logger = logging.getLogger('ampr')
 class Trainer:
     """Train and evaluate AMPR model."""
 
-    def __init__(self, model, dataset, config, logger_obj):
+    def __init__(self, model, dataset, config, logger_obj, eval_only=False):
+        """
+        Args:
+            eval_only: if True, skip building train/val/test loaders, optimizer,
+                       and scheduler. Use evaluate_split() to run eval on demand.
+        """
         self.config = config
+        self.dataset = dataset
         self.logger = logger_obj
 
         device_cfg = config['training'].get('device', 'auto')
@@ -36,20 +43,12 @@ class Trainer:
             self.model = nn.DataParallel(self.model)
             self.logger.info(f"[TRAIN] DataParallel on {torch.cuda.device_count()} GPUs")
 
-        self.loss_fn = AMPRLoss(
-            dag_matrix=dataset.dag_matrix_torch.to(self.device),
-            lambda_dag=config['training'].get('lambda_dag', 0.5),
-        )
-
         self.epochs = config['training']['epochs']
         self.batch_size = config['training']['batch_size']
 
         data_config = dict(config['data'])
         data_config['branch'] = config['branch']
-        self.train_loader, self.val_loader, self.test_loader, _ = get_dataloaders(
-            data_config, self.batch_size
-        )
-        self.logger.info(f"[TRAIN] Batches per epoch: {len(self.train_loader)}")
+        self.data_config = data_config
 
         self.go_emb = (
             dataset.go_emb_torch.to(self.device)
@@ -57,7 +56,6 @@ class Trainer:
             else None
         )
 
-        # Annotation-based IC for Smin: IC(t) = -log2(freq(t))
         labels_all = np.load(config['data']['labels'])
         freq = labels_all.mean(axis=0).clip(1e-7, 1.0)
         self.term_ic = (-np.log2(freq)).astype(np.float32)
@@ -65,6 +63,27 @@ class Trainer:
             f"[TRAIN] Term IC: mean={self.term_ic.mean():.2f}, "
             f"max={self.term_ic.max():.2f}, n_terms={len(self.term_ic)}"
         )
+
+        self.checkpoint_dir = Path(config['output']['checkpoint_dir'])
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.results_dir = Path(config['output']['results_file']).parent
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Heavy training-only setup: skip in eval-only mode
+        if eval_only:
+            self.train_loader = self.val_loader = self.test_loader = None
+            self.loss_fn = self.optimizer = self.scheduler = None
+            return
+
+        self.loss_fn = AMPRLoss(
+            dag_matrix=dataset.dag_matrix_torch.to(self.device),
+            lambda_dag=config['training'].get('lambda_dag', 0.5),
+        )
+
+        self.train_loader, self.val_loader, self.test_loader, _ = get_dataloaders(
+            data_config, self.batch_size
+        )
+        self.logger.info(f"[TRAIN] Batches per epoch: {len(self.train_loader)}")
 
         self.optimizer = optim.AdamW(
             self.model.parameters(),
@@ -80,11 +99,7 @@ class Trainer:
             pct_start=0.1,
         )
 
-        self.checkpoint_dir = Path(config['output']['checkpoint_dir'])
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
-        self.results_dir = Path(config['output']['results_file']).parent
-        self.results_dir.mkdir(parents=True, exist_ok=True)
+    # ── Public API ─────────────────────────────────────────────────────────
 
     def train(self):
         """Run full training loop, then evaluate on test set with all metrics."""
@@ -128,57 +143,105 @@ class Trainer:
 
         self.logger.info(f"[DONE] Training complete. Best val Fmax: {best_fmax:.4f}")
 
-        # Save epoch-level training history
         branch = self.config['branch'].lower()
         history_path = self.results_dir / f'training_history_{branch}.json'
         with open(history_path, 'w') as f:
             json.dump(history, f, indent=2)
         self.logger.info(f"[HISTORY] Saved → {history_path}")
 
-        # Load best checkpoint for test evaluation
-        best_ckpt = self.checkpoint_dir / 'best.pt'
-        if best_ckpt.exists():
-            core = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
-            state = torch.load(best_ckpt, map_location=self.device)
-            core.load_state_dict(state['model_state'])
-            self.logger.info(
-                f"[TEST] Loaded best checkpoint "
-                f"(epoch={state['epoch']}, val Fmax={state['fmax']:.4f})"
-            )
+        # Load best checkpoint and evaluate on full 'test' split
+        self._load_best_checkpoint()
+        self.evaluate_split('test', history=history)
 
-        # Full evaluation on test set
-        test_metrics, y_true, y_pred = self._full_evaluate(self.test_loader)
+    def evaluate_split(self, split_name, history=None, checkpoint_path=None):
+        """
+        Run full evaluation on a named split (e.g. 'test', 'test_LT_30').
+        If checkpoint_path is given, load it first; otherwise assume model is ready.
+        Saves split-suffixed metrics, predictions, and plots.
+        """
+        if checkpoint_path is not None:
+            self._load_checkpoint(checkpoint_path)
 
-        self.logger.info("[TEST] ─────────────────────────────────────")
-        self.logger.info(f"[TEST]  Fmax        = {test_metrics['fmax']:.4f}"
-                         f"  (threshold = {test_metrics['fmax_threshold']:.2f})")
-        self.logger.info(f"[TEST]  AUPRC       = {test_metrics['auprc']:.4f}")
-        self.logger.info(f"[TEST]  Smin        = {test_metrics['smin']:.4f}")
-        self.logger.info(f"[TEST]  AUROC micro = {test_metrics['micro_auroc']:.4f}")
-        self.logger.info(f"[TEST]  AUROC macro = {test_metrics['macro_auroc']:.4f}")
-        self.logger.info(f"[TEST]  Coverage    = {test_metrics['coverage']:.4f}")
-        self.logger.info("[TEST] ─────────────────────────────────────")
+        loader = self._make_loader_for_split(split_name)
+        if loader is None:
+            self.logger.warning(f"[EVAL] Skipping {split_name}: split is empty or missing")
+            return None
 
-        # Save test metrics JSON
-        metrics_path = self.results_dir / f'test_metrics_{branch}.json'
+        metrics, y_true, y_pred = self._full_evaluate(loader)
+
+        branch = self.config['branch'].lower()
+        suffix = self._suffix_for_split(split_name)
+        suffix_part = f'_{suffix}' if suffix else ''
+
+        self.logger.info(f"[EVAL] ─── Split: {split_name} ─── ({metrics['n_proteins']} proteins, "
+                         f"{metrics['n_terms_with_positives']} terms with positives)")
+        self.logger.info(f"[EVAL]  Fmax        = {metrics['fmax']:.4f}  (t={metrics['fmax_threshold']:.2f})")
+        self.logger.info(f"[EVAL]  AUPR micro  = {metrics['auprc_micro']:.4f}  (DeepFRI metric)")
+        self.logger.info(f"[EVAL]  AUPR macro  = {metrics['auprc_macro']:.4f}")
+        self.logger.info(f"[EVAL]  Smin        = {metrics['smin']:.4f}")
+        self.logger.info(f"[EVAL]  AUROC micro = {metrics['micro_auroc']:.4f}")
+        self.logger.info(f"[EVAL]  AUROC macro = {metrics['macro_auroc']:.4f}")
+        self.logger.info(f"[EVAL]  Coverage    = {metrics['coverage']:.4f}")
+
+        metrics_path = self.results_dir / f'test_metrics_{branch}{suffix_part}.json'
         with open(metrics_path, 'w') as f:
-            json.dump(test_metrics, f, indent=2)
-        self.logger.info(f"[TEST] Metrics saved → {metrics_path}")
+            json.dump(metrics, f, indent=2)
+        self.logger.info(f"[EVAL] Metrics saved → {metrics_path}")
 
-        # Save raw predictions (for offline plotting / analysis)
-        pred_path = self.results_dir / f'test_predictions_{branch}.npz'
+        pred_path = self.results_dir / f'test_predictions_{branch}{suffix_part}.npz'
         np.savez_compressed(str(pred_path), y_true=y_true, y_pred=y_pred)
-        self.logger.info(f"[TEST] Predictions saved → {pred_path}")
+        self.logger.info(f"[EVAL] Predictions saved → {pred_path}")
 
-        # Generate plots
         try:
             from ampr.evaluation.plots import generate_all_plots
             plots_dir = self.results_dir / 'plots'
-            generate_all_plots(history, y_true, y_pred, str(plots_dir), branch)
+            generate_all_plots(history, y_true, y_pred, str(plots_dir),
+                               branch, suffix=suffix)
         except Exception as exc:
             self.logger.warning(f"[PLOT] Skipped (error: {exc})")
 
-    # ------------------------------------------------------------------ #
+        return metrics
+
+    # ── Internals ──────────────────────────────────────────────────────────
+
+    def _suffix_for_split(self, split_name):
+        if split_name in (None, '', 'test'):
+            return ''
+        return split_name.replace('test_', '')
+
+    def _make_loader_for_split(self, split_name):
+        """Build a DataLoader for an arbitrary split key in splits.json."""
+        ds = AMPRDataset(
+            seq_emb_path=self.data_config['seq_emb'],
+            struct_emb_path=self.data_config['struct_emb'],
+            ppi_emb_path=self.data_config['ppi_emb'],
+            labels_path=self.data_config['labels'],
+            dag_matrix_path=self.data_config['dag_matrix'],
+            go_emb_path=self.data_config['go_emb'],
+            splits_path=self.data_config['splits'],
+            protein_order_path=self.data_config['protein_order'],
+            branch=self.data_config['branch'],
+            split=split_name,
+        )
+        if len(ds) == 0:
+            return None
+        return DataLoader(
+            ds, batch_size=self.batch_size, shuffle=False,
+            num_workers=0, pin_memory=True,
+        )
+
+    def _load_best_checkpoint(self):
+        ckpt_path = self.checkpoint_dir / 'best.pt'
+        if ckpt_path.exists():
+            self._load_checkpoint(ckpt_path)
+
+    def _load_checkpoint(self, ckpt_path):
+        core = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
+        state = torch.load(str(ckpt_path), map_location=self.device)
+        core.load_state_dict(state['model_state'])
+        epoch = state.get('epoch', '?')
+        fmax  = state.get('fmax', float('nan'))
+        self.logger.info(f"[CKPT] Loaded {ckpt_path} (epoch={epoch}, val Fmax={fmax:.4f})")
 
     def _train_epoch(self):
         """Single training epoch. Returns (avg_loss, loss_dict, mean_alphas)."""
@@ -252,7 +315,7 @@ class Trainer:
         all_preds, all_labels = [], []
 
         with torch.no_grad():
-            for batch in tqdm(loader, desc="Test Eval", leave=False):
+            for batch in tqdm(loader, desc="Eval", leave=False):
                 x_seq  = batch['x_seq'].to(self.device)
                 x_3di  = batch['x_3di'].to(self.device)
                 x_ppi  = batch['x_ppi'].to(self.device)

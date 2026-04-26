@@ -10,7 +10,7 @@ data:
   labels: data/labels_bp.npy
   dag_matrix: data/dag_matrices/dag_matrix_bp.npy
   go_emb: data/embeddings/go_emb_bp.npy
-  splits: data/splits.json
+  splits: data/splits_stratified.json
   protein_order: data/protein_order.json
 
 model:
@@ -23,7 +23,7 @@ model:
 
 training:
   epochs: 50
-  batch_size: 128
+  batch_size: 64
   lr: 1.0e-3
   lambda_dag: 0.5
   seed: 42

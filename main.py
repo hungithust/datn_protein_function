@@ -1,11 +1,15 @@
 #!/usr/bin/env python
 """
-AMPR: Adaptive Multimodal Protein Representation — Main training entry point.
+AMPR: Adaptive Multimodal Protein Representation — entry point.
 
-Usage:
+Usage (training, full pipeline):
     python main.py --config configs/mf.yaml
-    python main.py --config configs/bp.yaml
-    python main.py --config configs/cc.yaml
+
+Usage (eval only, on a specific test split):
+    python main.py --config configs/mf.yaml \
+        --eval-only \
+        --checkpoint checkpoints/mf/best.pt \
+        --test-split test_LT_30
 """
 
 import argparse
@@ -41,9 +45,15 @@ def seed_everything(seed):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='AMPR training')
+    parser = argparse.ArgumentParser(description='AMPR training / evaluation')
     parser.add_argument('--config', type=str, required=True)
-    parser.add_argument('--seed',   type=int,  default=42)
+    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--eval-only', action='store_true',
+                        help='Skip training; load checkpoint and evaluate on --test-split')
+    parser.add_argument('--checkpoint', type=str, default=None,
+                        help='Checkpoint path (defaults to <checkpoint_dir>/best.pt)')
+    parser.add_argument('--test-split', type=str, default='test',
+                        help='splits.json key to evaluate (test, test_LT_30, test_LT_95, ...)')
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
@@ -52,13 +62,18 @@ def main():
     log = setup_logging(config['output']['log_file'])
     log.info(f"Config: {args.config}")
     log.info(f"Branch: {config['branch']} | n_terms: {config['n_terms']}")
+    log.info(f"Mode: {'EVAL-ONLY' if args.eval_only else 'TRAIN+EVAL'}")
+    if args.eval_only:
+        log.info(f"Eval split: {args.test_split}")
     log.info(f"Device: {config['training']['device']}")
 
     seed_everything(args.seed)
     log.info(f"Seed: {args.seed}")
 
-    # Load train-split dataset (for dag_matrix + go_emb properties used by Trainer)
     data_cfg = config['data']
+    # In eval-only mode the dataset still needs DAG matrix + GO emb (always present
+    # in any split). Use the eval split directly to avoid loading the train split.
+    bootstrap_split = args.test_split if args.eval_only else 'train'
     dataset = AMPRDataset(
         seq_emb_path=data_cfg['seq_emb'],
         struct_emb_path=data_cfg['struct_emb'],
@@ -69,9 +84,9 @@ def main():
         splits_path=data_cfg['splits'],
         protein_order_path=data_cfg['protein_order'],
         branch=config['branch'],
-        split='train',
+        split=bootstrap_split,
     )
-    log.info(f"Train set: {len(dataset)} proteins")
+    log.info(f"{bootstrap_split.capitalize()} set: {len(dataset)} proteins")
 
     model = AMPRModel(
         d_hidden=config['model']['d_hidden'],
@@ -90,8 +105,14 @@ def main():
         dataset=dataset,
         config=config,
         logger_obj=log,
+        eval_only=args.eval_only,
     )
-    trainer.train()
+
+    if args.eval_only:
+        ckpt_path = args.checkpoint or str(Path(config['output']['checkpoint_dir']) / 'best.pt')
+        trainer.evaluate_split(args.test_split, history=None, checkpoint_path=ckpt_path)
+    else:
+        trainer.train()
 
 
 if __name__ == '__main__':

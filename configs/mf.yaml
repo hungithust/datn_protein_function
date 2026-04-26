@@ -10,7 +10,7 @@ data:
   labels: data/labels_mf.npy
   dag_matrix: data/dag_matrices/dag_matrix_mf.npy
   go_emb: data/embeddings/go_emb_mf.npy
-  splits: data/splits.json
+  splits: data/splits_stratified.json
   protein_order: data/protein_order.json   # row ordering of .npy files
 
 model:

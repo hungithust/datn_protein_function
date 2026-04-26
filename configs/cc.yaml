@@ -10,7 +10,7 @@ data:
   labels: data/labels_cc.npy
   dag_matrix: data/dag_matrices/dag_matrix_cc.npy
   go_emb: data/embeddings/go_emb_cc.npy
-  splits: data/splits.json
+  splits: data/splits_stratified.json
   protein_order: data/protein_order.json
 
 model:
