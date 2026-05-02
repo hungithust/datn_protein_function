@@ -189,7 +189,8 @@ def plot_identity_stratified(metrics_per_split, save_dir, branch, deepfri_baseli
     x_labels = ['<30%', '<40%', '<50%', '<70%', '<95%']
 
     def gather(metric_key, source):
-        return [source.get(t, {}).get(metric_key, np.nan) for t in thresholds]
+        vals = [source.get(t, {}).get(metric_key) for t in thresholds]
+        return [np.nan if v is None else v for v in vals]
 
     ampr_fmax  = gather('fmax',         metrics_per_split)
     ampr_aupr  = gather('auprc_micro',  metrics_per_split)
@@ -243,10 +244,11 @@ def plot_deepfri_comparison(all_metrics, deepfri_baseline, save_dir):
             x = np.arange(len(thresholds))
             width = 0.4
 
-            ampr_vals = [all_metrics.get(branch, {}).get(t, {}).get(key, 0)
+            ampr_vals = [all_metrics.get(branch, {}).get(t, {}).get(key) or 0
                          for t in thresholds]
-            df_vals   = [deepfri_baseline.get(branch.upper(), {}).get(t, {}).get(key, 0)
+            df_raw    = [deepfri_baseline.get(branch.upper(), {}).get(t, {}).get(key)
                          for t in thresholds]
+            df_vals   = [v if v is not None else 0 for v in df_raw]
 
             ax.bar(x - width/2, ampr_vals, width,
                    label='AMPR (ours)', color='#3498db')

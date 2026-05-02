@@ -1,0 +1,104 @@
+{
+  "_sources": {
+    "fmax": "Gligorijevic et al. 2021 (DeepFRI, Nature Communications), Table 1 — evaluated on sequences with <30% identity to training set (new-function benchmark)",
+    "auprc_micro": "Gligorijevic et al. 2021, Table 1 — micro-averaged precision-recall area",
+    "smin": "Kulmanov et al. (HEAL), Supplementary Table S3.3 — normalizedSemanticDistance applied retrospectively to DeepFRI predictions"
+  },
+  "_note": "Fmax/AUPR for LT_40..LT_95 thresholds are not available from DeepFRI paper (not reported). Only LT_30 is the DeepFRI benchmark. Smin values follow HEAL normalized formula: ru_i = IC(FN)/IC(true), mi_i = IC(FP)/IC(pred), S_i = sqrt(ru_i^2 + mi_i^2), values in [0, sqrt(2)].",
+  "MF": {
+    "LT_30": {
+      "fmax": 0.631,
+      "auprc_micro": 0.545,
+      "smin": 0.507
+    },
+    "LT_40": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "LT_50": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "LT_70": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "LT_95": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "test": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    }
+  },
+  "BP": {
+    "LT_30": {
+      "fmax": 0.566,
+      "auprc_micro": 0.353,
+      "smin": 0.571
+    },
+    "LT_40": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "LT_50": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "LT_70": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "LT_95": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "test": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    }
+  },
+  "CC": {
+    "LT_30": {
+      "fmax": 0.744,
+      "auprc_micro": 0.508,
+      "smin": 0.531
+    },
+    "LT_40": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "LT_50": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "LT_70": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "LT_95": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    },
+    "test": {
+      "fmax": null,
+      "auprc_micro": null,
+      "smin": null
+    }
+  }
+}

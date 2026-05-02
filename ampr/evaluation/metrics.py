@@ -87,21 +87,19 @@ def compute_micro_auprc(y_true, y_pred):
 
 def compute_smin(y_true, y_pred, term_ic):
     """
-    S_min (semantic distance, lower is better).
+    S_min (normalized semantic distance, CAFA/HEAL protocol, lower is better).
 
-    Uses annotation-based information content:
-        IC(t) = -log2(freq(t))  where freq(t) = fraction of proteins annotated with t.
-
-    For each threshold t:
-        misinformation (mi) = mean per-protein sum of IC for false-positive terms
-        remaining uncertainty (ru) = mean per-protein sum of IC for false-negative terms
-        S(t) = sqrt(mi² + ru²)
-    S_min = min over all t.
+    Per-protein normalization (produces values in [0, √2]):
+        ru_i = Σ IC[FN_i] / Σ IC[TrueAnnot_i]       remaining uncertainty ∈ [0,1]
+        mi_i = Σ IC[FP_i] / Σ IC[PredAnnot_i]        misinformation ∈ [0,1] (0 if nothing predicted)
+        S_i  = sqrt(ru_i² + mi_i²)
+    S(t)   = mean over proteins of S_i
+    S_min  = min over thresholds of S(t)
 
     Args:
         y_true:  (n_samples, n_terms) binary
         y_pred:  (n_samples, n_terms) probabilities
-        term_ic: (n_terms,) information content per term
+        term_ic: (n_terms,) information content per term — IC(t) = -log2(freq(t))
     """
     y_true = np.asarray(y_true, dtype=np.float32)
     y_pred = np.asarray(y_pred, dtype=np.float32)
@@ -114,6 +112,9 @@ def compute_smin(y_true, y_pred, term_ic):
     if len(y_true) == 0:
         return 0.0
 
+    # IC of true annotations per protein — denominator for ru; always > 0 (has_annot)
+    true_ic_sum = (y_true * term_ic).sum(axis=1)  # (n,)
+
     thresholds = np.linspace(0.0, 1.0, 51)
     best_smin = np.inf
 
@@ -122,9 +123,14 @@ def compute_smin(y_true, y_pred, term_ic):
         fp = pred_bin * (1 - y_true)
         fn = (1 - pred_bin) * y_true
 
-        mi = (fp * term_ic).sum(axis=1).mean()
-        ru = (fn * term_ic).sum(axis=1).mean()
-        s = np.sqrt(mi ** 2 + ru ** 2)
+        ru = (fn * term_ic).sum(axis=1) / true_ic_sum                  # (n,) ∈ [0,1]
+
+        pred_ic_sum = (pred_bin * term_ic).sum(axis=1)                  # (n,)
+        mi = np.where(pred_ic_sum > 0,
+                      (fp * term_ic).sum(axis=1) / pred_ic_sum,
+                      0.0)                                              # (n,) ∈ [0,1]
+
+        s = np.mean(np.sqrt(ru ** 2 + mi ** 2))
 
         if s < best_smin:
             best_smin = s
