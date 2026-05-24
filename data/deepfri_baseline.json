@@ -1,104 +1,28 @@
 {
   "_sources": {
-    "fmax": "Gligorijevic et al. 2021 (DeepFRI, Nature Communications), Table 1 — evaluated on sequences with <30% identity to training set (new-function benchmark)",
-    "auprc_micro": "Gligorijevic et al. 2021, Table 1 — micro-averaged precision-recall area",
-    "smin": "Kulmanov et al. (HEAL), Supplementary Table S3.3 — normalizedSemanticDistance applied retrospectively to DeepFRI predictions"
+    "fmax": "HEAL Table S3.2 (Gu et al., Bioinformatics 2023) — averaged across 10 bootstrap samples on PDBch test set",
+    "auprc_macro": "HEAL Table S3.1",
+    "smin": "HEAL Table S3.3 (normalized semantic distance, [0, sqrt(2)])"
   },
-  "_note": "Fmax/AUPR for LT_40..LT_95 thresholds are not available from DeepFRI paper (not reported). Only LT_30 is the DeepFRI benchmark. Smin values follow HEAL normalized formula: ru_i = IC(FN)/IC(true), mi_i = IC(FP)/IC(pred), S_i = sqrt(ru_i^2 + mi_i^2), values in [0, sqrt(2)].",
   "MF": {
-    "LT_30": {
-      "fmax": 0.631,
-      "auprc_micro": 0.545,
-      "smin": 0.507
-    },
-    "LT_40": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "LT_50": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "LT_70": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "LT_95": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "test": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    }
+    "LT_30": {"fmax": 0.544, "auprc_macro": 0.425, "smin": 0.507},
+    "LT_40": {"fmax": 0.552, "auprc_macro": 0.443, "smin": 0.498},
+    "LT_50": {"fmax": 0.575, "auprc_macro": 0.463, "smin": 0.483},
+    "LT_70": {"fmax": 0.604, "auprc_macro": 0.485, "smin": 0.454},
+    "LT_95": {"fmax": 0.626, "auprc_macro": 0.504, "smin": 0.438}
   },
   "BP": {
-    "LT_30": {
-      "fmax": 0.566,
-      "auprc_micro": 0.353,
-      "smin": 0.571
-    },
-    "LT_40": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "LT_50": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "LT_70": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "LT_95": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "test": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    }
+    "LT_30": {"fmax": 0.502, "auprc_macro": 0.214, "smin": 0.571},
+    "LT_40": {"fmax": 0.510, "auprc_macro": 0.218, "smin": 0.566},
+    "LT_50": {"fmax": 0.517, "auprc_macro": 0.232, "smin": 0.561},
+    "LT_70": {"fmax": 0.533, "auprc_macro": 0.253, "smin": 0.545},
+    "LT_95": {"fmax": 0.540, "auprc_macro": 0.268, "smin": 0.541}
   },
   "CC": {
-    "LT_30": {
-      "fmax": 0.744,
-      "auprc_micro": 0.508,
-      "smin": 0.531
-    },
-    "LT_40": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "LT_50": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "LT_70": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "LT_95": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    },
-    "test": {
-      "fmax": null,
-      "auprc_micro": null,
-      "smin": null
-    }
+    "LT_30": {"fmax": 0.605, "auprc_macro": 0.248, "smin": 0.531},
+    "LT_40": {"fmax": 0.606, "auprc_macro": 0.248, "smin": 0.529},
+    "LT_50": {"fmax": 0.606, "auprc_macro": 0.251, "smin": 0.528},
+    "LT_70": {"fmax": 0.605, "auprc_macro": 0.258, "smin": 0.530},
+    "LT_95": {"fmax": 0.612, "auprc_macro": 0.285, "smin": 0.524}
   }
 }
