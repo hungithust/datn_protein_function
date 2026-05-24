@@ -5,6 +5,13 @@
 **Execution Environment:** Google Colab (Python 3.12.13, T4 15GB) or Kaggle (Python 3.12.12, 2x T4)  
 **Status:** Brainstorming → Implementation → Thesis writing
 
+## Windows Environment (IMPORTANT for subagents)
+
+- **Python env:** `python` = `D:\anaconda3\python.exe` (Anaconda). Always use `python -m pytest`, never bare `pytest` (bare pytest points to wrong Python312 env and will fail silently).
+- **Shell:** Use PowerShell tool for running pytest/python commands. Bash tool has a `rtk` PreToolUse hook that rewrites `pytest` → `rtk pytest` which may swallow output.
+- **pytest config:** `pytest.ini` is at repo root — `pytest tests/` works from project root.
+- **obonet:** Must be installed in Anaconda env: `pip install obonet==1.0.0` if missing.
+
 ## Quick Links
 
 - **Design Spec:** [docs/superpowers/specs/2026-04-23-ampr-design.md](docs/superpowers/specs/2026-04-23-ampr-design.md)
