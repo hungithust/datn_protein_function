@@ -1,5 +1,9 @@
-.gitignore
+
 kaggle.json
 struct_embeddings.npy
 checkpoints/
+
 results/
+
+baselines/deepfri/pretrained/
+results/baselines/

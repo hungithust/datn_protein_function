@@ -6,3 +6,7 @@ dag_matrix_*.npy
 
 # Downloaded once per fresh checkout
 go-basic.obo
+
+# Downloaded PDB structures and derived files
+test_pdb_files/
+contact_maps_test.h5
