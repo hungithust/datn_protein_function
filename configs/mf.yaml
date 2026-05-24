@@ -4,22 +4,27 @@ branch: MF
 n_terms: 489
 
 data:
-  seq_emb: data/embeddings/seq_embeddings.npy
+  # ── Phase 0: standardized DeepFRI/HEAL-comparable splits + labels ──
+  labels:         data/pdbch/labels_mf.npy
+  dag_matrix:     data/pdbch/dag_matrix_mf.npy
+  splits:         data/pdbch/splits.json
+  protein_order:  data/pdbch/protein_order.json
+
+  # ── Embeddings: still pointing at OLD precomputed files ──
+  # These will be re-precomputed in Phase 1 to match the new protein_order.json.
+  # Phase 0 smoke test uses them as-is (alignment not guaranteed).
+  seq_emb:    data/embeddings/seq_embeddings.npy
   struct_emb: data/embeddings/struct_embeddings.npy
-  ppi_emb: data/embeddings/ppi_embeddings.npy
-  labels: data/labels_mf.npy
-  dag_matrix: data/dag_matrices/dag_matrix_mf.npy
-  go_emb: data/embeddings/go_emb_mf.npy
-  splits: data/splits_stratified.json
-  protein_order: data/protein_order.json   # row ordering of .npy files
+  ppi_emb:    data/embeddings/ppi_embeddings.npy
+  go_emb:     data/embeddings/go_emb_mf.npy
 
 model:
   d_hidden: 512
   dropout_3di: 0.15
   dropout_ppi: 0.25
-  classifier: both      # "linear" | "biobert" | "both"
-  go_emb_dim: 768       # BioBERT output dimension
-  ppi_dim: 256          # DeepGO graph_new_embeddings.pkl: 256-dim
+  classifier: both
+  go_emb_dim: 768
+  ppi_dim: 256
 
 training:
   epochs: 50
@@ -27,7 +32,7 @@ training:
   lr: 1.0e-3
   lambda_dag: 0.5
   seed: 42
-  device: auto          # "cuda" | "cpu" | "auto"
+  device: auto
 
 output:
   checkpoint_dir: checkpoints/mf/
