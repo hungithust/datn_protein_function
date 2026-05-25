@@ -72,45 +72,66 @@ def save_cmap_h5(h5_path: Path, prot_id: str, cmap: np.ndarray, sequence: str) -
         ds.attrs["sequence"] = sequence
 
 
+def _worker(args_tuple):
+    """Top-level function so ProcessPoolExecutor can pickle it."""
+    cid, pdb_dir = args_tuple
+    pdb_id, chain = cid.split("-")
+    cif_path = pdb_dir / f"{pdb_id.upper()}.cif.gz"
+    if not cif_path.exists():
+        return cid, None, None, "missing_file"
+    try:
+        cmap, seq = compute_cmap(cif_path, chain)
+        return cid, cmap, seq, None
+    except Exception as e:
+        return cid, None, None, str(e)
+
+
 def main():
+    import os
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--splits", type=Path, default=Path("data/pdbch/splits.json"))
     parser.add_argument("--split-key", default="test")
     parser.add_argument("--pdb-dir", type=Path, default=Path("data/pdbch/test_pdb_files"))
     parser.add_argument("--out", type=Path, default=Path("data/pdbch/contact_maps_test.h5"))
+    parser.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 4),
+                        help="parallel worker processes (default: min(8, cpu_count))")
     args = parser.parse_args()
 
     with open(args.splits, "r", encoding="utf-8") as f:
         chain_ids = json.load(f)[args.split_key]
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    failed = []
     done = set()
     if args.out.exists():
         with h5py.File(args.out, "r") as f:
             done = set(f.keys())
         log.info("resuming — %d cmaps already in %s", len(done), args.out)
 
-    for i, cid in enumerate(chain_ids, 1):
-        if cid in done:
-            continue
-        pdb_id, chain = cid.split("-")
-        cif_path = args.pdb_dir / f"{pdb_id.upper()}.cif.gz"
-        if not cif_path.exists():
-            failed.append(cid)
-            continue
-        try:
-            cmap, seq = compute_cmap(cif_path, chain)
-            save_cmap_h5(args.out, cid, cmap, seq)
-        except Exception as e:
-            log.warning("%s: %s", cid, e)
-            failed.append(cid)
-        if i % 200 == 0:
-            log.info("progress %d/%d (failed: %d)", i, len(chain_ids), len(failed))
+    todo = [(cid, args.pdb_dir) for cid in chain_ids if cid not in done]
+    log.info("processing %d chains with %d workers", len(todo), args.workers)
+
+    failed = []
+    n_done = 0
+    with ProcessPoolExecutor(max_workers=args.workers) as pool:
+        futures = {pool.submit(_worker, t): t[0] for t in todo}
+        for future in as_completed(futures):
+            cid, cmap, seq, err = future.result()
+            if err:
+                if err != "missing_file":
+                    log.warning("%s: %s", cid, err)
+                failed.append(cid)
+            else:
+                save_cmap_h5(args.out, cid, cmap, seq)
+                n_done += 1
+            total = n_done + len(failed)
+            if total % 200 == 0:
+                log.info("progress %d/%d (failed: %d)", total, len(todo), len(failed))
 
     (args.out.parent / "test_pdb_files" / "_cmap_failed.txt").write_text(
         "\n".join(failed), encoding="utf-8")
-    log.info("done — %d cmaps saved, %d failed", len(chain_ids) - len(failed), len(failed))
+    log.info("done — %d cmaps saved, %d failed", n_done, len(failed))
 
 
 if __name__ == "__main__":
