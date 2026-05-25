@@ -46,7 +46,11 @@ def load_deepfri_model(weights_path: Path):
     # DeepFRI uses custom layers; load via custom_objects.
     # Import from DeepFRI source.
     import sys
-    sys.path.insert(0, "DeepFRI/DeepFRI")
+    from pathlib import Path as _Path
+    # DeepFRI repo cloned at <project_root>/DeepFRI/
+    # deepfrier package lives at DeepFRI/deepfrier/ (one level, not two)
+    _root = _Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(_root / "DeepFRI"))
     from deepfrier.layers import GraphConv, MultiGraphConv, SumPooling
     custom = {"GraphConv": GraphConv, "MultiGraphConv": MultiGraphConv,
               "SumPooling": SumPooling}
