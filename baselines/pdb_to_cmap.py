@@ -22,16 +22,30 @@ AA3 = {
 }
 
 
-def compute_cmap(cif_path: Path, chain_id: str) -> tuple[np.ndarray, str]:
-    """Return (distance_matrix (L,L) float32, sequence (str length L))."""
-    parser = MMCIFParser(QUIET=True, auth_chains=False)
+def _parse_structure(cif_path: Path, auth_chains: bool):
+    parser = MMCIFParser(QUIET=True, auth_chains=auth_chains)
     opener = gzip.open if str(cif_path).endswith(".gz") else open
     with opener(cif_path, "rt") as f:
-        structure = parser.get_structure(cif_path.stem, f)
+        return parser.get_structure(cif_path.stem, f)
 
+
+def compute_cmap(cif_path: Path, chain_id: str) -> tuple[np.ndarray, str]:
+    """Return (distance_matrix (L,L) float32, sequence (str length L)).
+
+    Tries auth_chains=True first (author chain IDs, matching DeepFRI splits),
+    falls back to auth_chains=False (label chain IDs) when not found.
+    """
+    structure = _parse_structure(cif_path, auth_chains=True)
     model = next(structure.get_models())
-    if chain_id not in [c.id for c in model]:
-        raise KeyError(f"chain {chain_id} not in {cif_path.name}")
+    available = [c.id for c in model]
+    if chain_id not in available:
+        # Fallback: label chains (some deposited structures differ)
+        structure = _parse_structure(cif_path, auth_chains=False)
+        model = next(structure.get_models())
+        available = [c.id for c in model]
+        if chain_id not in available:
+            raise KeyError(f"chain {chain_id} not in {cif_path.name} "
+                           f"(auth chains: {available})")
     chain = model[chain_id]
 
     coords = []
@@ -44,9 +58,7 @@ def compute_cmap(cif_path: Path, chain_id: str) -> tuple[np.ndarray, str]:
         coords.append(res["CA"].get_coord())
         seq.append(AA3.get(res.get_resname(), "X"))
 
-    coords = np.asarray(coords, dtype=np.float32)
-    L = len(coords)
-    cmap = np.zeros((L, L), dtype=np.float32)
+    coords = np.asarray(coords, dtype=np.float32).reshape(-1, 3)  # ensure (L, 3)
     diff = coords[:, None, :] - coords[None, :, :]
     cmap = np.sqrt((diff ** 2).sum(axis=-1)).astype(np.float32)
     return cmap, "".join(seq)
