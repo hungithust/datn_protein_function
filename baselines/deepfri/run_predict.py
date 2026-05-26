@@ -43,6 +43,9 @@ def predict_one(model, cmap: np.ndarray, seq: str) -> np.ndarray:
 def load_deepfri_model(weights_path: Path):
     """Lazy TF import so non-TF environments don't break the test runner."""
     import tensorflow as tf
+    # Disable XLA JIT and force eager — legacy LSTM w/ dynamic shapes hangs otherwise
+    tf.config.optimizer.set_jit(False)
+    tf.config.run_functions_eagerly(True)
     from tensorflow.keras.models import load_model
     import sys
     from pathlib import Path as _Path
