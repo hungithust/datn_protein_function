@@ -46,7 +46,6 @@ def predict_one(model, cmap: np.ndarray, seq: str) -> np.ndarray:
 
 def load_deepfri_model(weights_path: Path):
     """Lazy TF import so non-TF environments don't break the test runner."""
-    import signal, traceback as _tb
     import tensorflow as tf
     from tensorflow.keras.models import load_model
     import sys
@@ -72,19 +71,16 @@ def load_deepfri_model(weights_path: Path):
         "CuDNNLSTM": _CuDNNLSTM,
     }
 
-    # Diagnostic: print stack trace after 60s hang to find exact hang location
-    def _alarm(signum, frame):
-        print("\n=== HANG DETECTED — stack trace ===", flush=True)
-        _tb.print_stack(frame)
-        print("===================================\n", flush=True)
-        signal.alarm(60)  # keep firing every 60s
+    # Keras 3 deserialize_node builds error messages via repr(layer._inbound_nodes).
+    # ListWrapper.__repr__ in TF trackable traverses the full graph recursively →
+    # exponential traversal on a MERGED model with 50+ layers. Patch to O(1).
+    try:
+        import tensorflow.python.trackable.data_structures as _ds
+        _ds.ListWrapper.__repr__ = lambda self: f"ListWrapper(len={len(self._storage)})"
+    except Exception:
+        pass
 
-    signal.signal(signal.SIGALRM, _alarm)
-    signal.alarm(60)
-    log.info("calling load_model (timeout probe active)")
-    model = load_model(str(weights_path), custom_objects=custom, compile=False)
-    signal.alarm(0)
-    return model
+    return load_model(str(weights_path), custom_objects=custom, compile=False)
 
 
 def main():
