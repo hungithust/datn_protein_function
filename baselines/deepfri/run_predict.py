@@ -56,11 +56,15 @@ def load_deepfri_model(weights_path: Path):
 
     class _CuDNNLSTM(tf.keras.layers.LSTM):
         def __init__(self, *args, time_major=False, **kwargs):
+            # CuDNNLSTM bias shape=(8*units,); Keras 3 LSTM implementation=2
+            # uses bias shape=(2, 4*units) — same 8*units elements, compatible reshape.
+            kwargs.setdefault("implementation", 2)
             super().__init__(*args, **kwargs)
 
         @classmethod
         def from_config(cls, config):
             config.pop("time_major", None)
+            config.setdefault("implementation", 2)
             return super().from_config(config)
 
     custom = {
@@ -104,6 +108,29 @@ def load_deepfri_model(weights_path: Path):
             return _orig_deserialize_node(node_data, created_layers)
 
         _kf.deserialize_node = _patched_deserialize_node
+    except Exception:
+        pass
+
+    # 3. Weight reshape patch: CuDNNLSTM bias (8*units,) → Keras3 LSTM impl=2 (2, 4*units)
+    #    Same total elements, different shape — patch _set_weights to auto-reshape.
+    try:
+        import keras.src.legacy.saving.legacy_h5_format as _h5
+        import numpy as np
+        _orig_set_weights = _h5._set_weights
+
+        def _patched_set_weights(layer, weight_value_tuples):
+            patched = []
+            for w, val in weight_value_tuples:
+                if hasattr(w, "shape") and w.shape != val.shape:
+                    w_size = 1
+                    for d in w.shape:
+                        w_size *= d
+                    if w_size == val.size:
+                        val = np.reshape(val, w.shape)
+                patched.append((w, val))
+            return _orig_set_weights(layer, patched)
+
+        _h5._set_weights = _patched_set_weights
     except Exception:
         pass
 
