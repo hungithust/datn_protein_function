@@ -9,10 +9,13 @@ Output schema (matches Phase 1's contact_maps_test.h5):
 import argparse
 import glob as _glob
 import logging
+import sys
 from pathlib import Path
 
 import h5py
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ampr.data.tfrecord_loader import iter_tfrecord
 
