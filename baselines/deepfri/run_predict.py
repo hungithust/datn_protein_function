@@ -48,12 +48,24 @@ def load_deepfri_model(weights_path: Path):
     _root = _Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(_root / "DeepFRI"))
     from deepfrier.layers import GraphConv, MultiGraphConv, SumPooling
+
+    # DeepFRI weights were saved with CuDNNLSTM(time_major=False).
+    # Keras 3 removed both CuDNNLSTM and the time_major arg from LSTM.
+    # Wrapper absorbs time_major so deserialization doesn't crash.
+    class _CuDNNLSTM(tf.keras.layers.LSTM):
+        def __init__(self, *args, time_major=False, **kwargs):
+            super().__init__(*args, **kwargs)
+
+        @classmethod
+        def from_config(cls, config):
+            config.pop("time_major", None)
+            return super().from_config(config)
+
     custom = {
         "GraphConv": GraphConv,
         "MultiGraphConv": MultiGraphConv,
         "SumPooling": SumPooling,
-        # CuDNNLSTM was removed in Keras 3 / TF 2.16+ — alias to standard LSTM
-        "CuDNNLSTM": tf.keras.layers.LSTM,
+        "CuDNNLSTM": _CuDNNLSTM,
     }
     return load_model(str(weights_path), custom_objects=custom, compile=False)
 
