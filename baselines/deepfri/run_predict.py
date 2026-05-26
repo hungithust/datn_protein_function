@@ -31,12 +31,13 @@ def seq2onehot(seq: str) -> np.ndarray:
 
 
 def predict_one(model, cmap: np.ndarray, seq: str) -> np.ndarray:
+    import tensorflow as tf
     A = (cmap < CMAP_THRESHOLD).astype(np.float32)
     S = seq2onehot(seq)
-    A = A[None, ...]  # (1, L, L)
-    S = S[None, ...]  # (1, L, 26)
-    out = model.predict([A, S], verbose=0)
-    return out.reshape(-1)
+    A = tf.constant(A[None, ...])  # (1, L, L)
+    S = tf.constant(S[None, ...])  # (1, L, 26)
+    out = model([A, S], training=False)
+    return out.numpy().reshape(-1)
 
 
 def load_deepfri_model(weights_path: Path):
