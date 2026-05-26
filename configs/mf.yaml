@@ -17,6 +17,11 @@ data:
   struct_emb: data/embeddings/struct_embeddings.npy
   ppi_emb:    data/embeddings/ppi_embeddings.npy
   go_emb:     data/embeddings/go_emb_mf.npy
+  use_cmap: true
+  cmap_h5:
+    train: data/pdbch/contact_maps_train.h5
+    valid: data/pdbch/contact_maps_valid.h5
+    test:  data/pdbch/contact_maps_test.h5
 
 model:
   d_hidden: 512
@@ -25,6 +30,9 @@ model:
   classifier: both
   go_emb_dim: 768
   ppi_dim: 256
+  structure_modality: gnn
+  gnn_input_dim: 26
+  gnn_hidden_dim: 256
 
 training:
   epochs: 50

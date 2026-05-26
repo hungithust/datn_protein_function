@@ -32,7 +32,10 @@ class AMPRDataset(Dataset):
 
     def __init__(self, seq_emb_path, struct_emb_path, ppi_emb_path, labels_path,
                  dag_matrix_path, go_emb_path, splits_path, protein_order_path,
-                 branch='MF', split='train'):
+                 branch='MF', split='train',
+                 cmap_h5_paths: dict | None = None,
+                 use_cmap: bool = False,
+                 max_len: int = 1000):
 
         self.seq_emb = np.load(seq_emb_path).astype(np.float32)
         self.struct_emb = np.load(struct_emb_path).astype(np.float32)
@@ -63,19 +66,50 @@ class AMPRDataset(Dataset):
         logger.info(f"[DATASET] GO emb   shape : {self._go_emb.shape}")
         logger.info(f"[DATASET] PPI zero rows  : {(self.ppi_emb.sum(axis=1) == 0).sum()}/{len(self.ppi_emb)}")
 
+        self.use_cmap = use_cmap
+        self.max_len = max_len
+        self._cmap_store = None
+        if use_cmap:
+            from ampr.data.contact_map_h5 import ContactMapStore
+            assert cmap_h5_paths is not None, "use_cmap=True requires cmap_h5_paths"
+            self._cmap_store = ContactMapStore(cmap_h5_paths)
+            # Filter to proteins with available cmap
+            before = len(self.protein_ids)
+            self.protein_ids = [p for p in self.protein_ids if p in self._cmap_store]
+            logger.info(f"[DATASET] cmap filter: {before} → {len(self.protein_ids)}")
+
     def __len__(self):
         return len(self.protein_ids)
+
+    _ALPHABET = "ACDEFGHIKLMNPQRSTVWYBOUXZ-."
+    _CHAR2IDX = {a: i for i, a in enumerate(_ALPHABET)}
+
+    def _encode_seq(self, seq: str) -> torch.Tensor:
+        L = len(seq)
+        M = torch.zeros(L, 26, dtype=torch.float32)
+        for i, a in enumerate(seq):
+            M[i, self._CHAR2IDX.get(a, self._CHAR2IDX.get("X", 22))] = 1.0
+        return M
 
     def __getitem__(self, idx):
         pid = self.protein_ids[idx]
         row = self._prot2idx[pid]
-        return {
+        item = {
             'x_seq':   torch.from_numpy(self.seq_emb[row]),
             'x_3di':   torch.from_numpy(self.struct_emb[row]),
             'x_ppi':   torch.from_numpy(self.ppi_emb[row]),
             'labels':  torch.from_numpy(self.labels[row]),
             'prot_id': pid,
         }
+        if self.use_cmap:
+            cmap = self._cmap_store[pid]               # (L, L) float32
+            L = min(cmap.shape[0], self.max_len)
+            cmap = cmap[:L, :L]
+            seq = self._cmap_store.get_sequence(pid)[:L]
+            item['cmap'] = torch.from_numpy(cmap)
+            item['seq_1hot'] = self._encode_seq(seq)
+            item['length'] = L
+        return item
 
     @property
     def dag_matrix_torch(self):
@@ -84,6 +118,36 @@ class AMPRDataset(Dataset):
     @property
     def go_emb_torch(self):
         return torch.from_numpy(self._go_emb)
+
+
+def collate_with_cmap(batch: list[dict]) -> dict:
+    """Pad cmap and seq_1hot to longest length in batch; build boolean mask."""
+    if 'cmap' not in batch[0]:
+        from torch.utils.data.dataloader import default_collate
+        return default_collate(batch)
+
+    B = len(batch)
+    L_max = max(item['length'] for item in batch)
+    cmap_padded = torch.zeros(B, L_max, L_max)
+    seq_1hot_padded = torch.zeros(B, L_max, 26)
+    cmap_mask = torch.zeros(B, L_max, dtype=torch.bool)
+
+    for i, item in enumerate(batch):
+        L = item['length']
+        cmap_padded[i, :L, :L] = item['cmap']
+        seq_1hot_padded[i, :L] = item['seq_1hot']
+        cmap_mask[i, :L] = True
+
+    return {
+        'x_seq':     torch.stack([b['x_seq']  for b in batch]),
+        'x_3di':     torch.stack([b['x_3di']  for b in batch]),
+        'x_ppi':     torch.stack([b['x_ppi']  for b in batch]),
+        'labels':    torch.stack([b['labels'] for b in batch]),
+        'cmap':      cmap_padded,
+        'seq_1hot':  seq_1hot_padded,
+        'cmap_mask': cmap_mask,
+        'prot_id':   [b['prot_id'] for b in batch],
+    }
 
 
 def get_dataloaders(data_config, batch_size, num_workers=0):
@@ -95,6 +159,8 @@ def get_dataloaders(data_config, batch_size, num_workers=0):
         go_emb, splits, protein_order, branch
     """
     branch = data_config.get('branch', 'MF')
+    use_cmap = data_config.get('use_cmap', False)
+    cmap_h5_paths = data_config.get('cmap_h5')
 
     def make_dataset(split):
         return AMPRDataset(
@@ -108,14 +174,18 @@ def get_dataloaders(data_config, batch_size, num_workers=0):
             protein_order_path=data_config['protein_order'],
             branch=branch,
             split=split,
+            use_cmap=use_cmap,
+            cmap_h5_paths=cmap_h5_paths,
         )
+
+    collate_fn = collate_with_cmap if use_cmap else None
 
     train_ds = make_dataset('train')
     valid_ds = make_dataset('valid')
     test_ds  = make_dataset('test')
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=num_workers, pin_memory=True)
-    valid_loader = DataLoader(valid_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-    test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=num_workers, pin_memory=True, collate_fn=collate_fn)
+    valid_loader = DataLoader(valid_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, collate_fn=collate_fn)
+    test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, collate_fn=collate_fn)
 
     return train_loader, valid_loader, test_loader, train_ds

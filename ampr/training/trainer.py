@@ -12,11 +12,20 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from ampr.data.dataset import AMPRDataset, get_dataloaders
+from ampr.data.dataset import AMPRDataset, get_dataloaders, collate_with_cmap
 from ampr.evaluation.metrics import compute_fmax, compute_all_metrics
 from ampr.training.loss import AMPRLoss
 
 logger = logging.getLogger('ampr')
+
+
+def _batch_to_model_kwargs(batch: dict, device) -> dict:
+    """Extract cmap-related fields and move to device if present."""
+    out = {}
+    for k in ("cmap", "cmap_mask", "seq_1hot"):
+        if k in batch:
+            out[k] = batch[k].to(device)
+    return out
 
 
 class Trainer:
@@ -211,6 +220,7 @@ class Trainer:
 
     def _make_loader_for_split(self, split_name):
         """Build a DataLoader for an arbitrary split key in splits.json."""
+        use_cmap = self.data_config.get('use_cmap', False)
         ds = AMPRDataset(
             seq_emb_path=self.data_config['seq_emb'],
             struct_emb_path=self.data_config['struct_emb'],
@@ -222,12 +232,15 @@ class Trainer:
             protein_order_path=self.data_config['protein_order'],
             branch=self.data_config['branch'],
             split=split_name,
+            use_cmap=use_cmap,
+            cmap_h5_paths=self.data_config.get('cmap_h5'),
         )
         if len(ds) == 0:
             return None
         return DataLoader(
             ds, batch_size=self.batch_size, shuffle=False,
             num_workers=0, pin_memory=True,
+            collate_fn=collate_with_cmap if use_cmap else None,
         )
 
     def _load_best_checkpoint(self):
@@ -258,8 +271,9 @@ class Trainer:
             self.optimizer.zero_grad()
 
             core = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
+            kw = _batch_to_model_kwargs(batch, self.device)
             logits, alphas = core(
-                x_seq, x_3di, x_ppi, go_emb=self.go_emb, return_alphas=True
+                x_seq, x_3di, x_ppi, go_emb=self.go_emb, return_alphas=True, **kw
             )
 
             loss, loss_dict = self.loss_fn(logits, labels)
@@ -294,7 +308,8 @@ class Trainer:
                 labels = batch['labels'].to(self.device)
 
                 core = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
-                logits = core(x_seq, x_3di, x_ppi, go_emb=self.go_emb)
+                kw = _batch_to_model_kwargs(batch, self.device)
+                logits = core(x_seq, x_3di, x_ppi, go_emb=self.go_emb, **kw)
                 probs  = torch.sigmoid(logits)
 
                 all_preds.append(probs.cpu().numpy())
@@ -322,7 +337,8 @@ class Trainer:
                 labels = batch['labels'].to(self.device)
 
                 core = self.model.module if isinstance(self.model, nn.DataParallel) else self.model
-                logits = core(x_seq, x_3di, x_ppi, go_emb=self.go_emb)
+                kw = _batch_to_model_kwargs(batch, self.device)
+                logits = core(x_seq, x_3di, x_ppi, go_emb=self.go_emb, **kw)
                 probs  = torch.sigmoid(logits)
 
                 all_preds.append(probs.cpu().numpy())

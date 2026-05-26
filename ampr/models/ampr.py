@@ -56,8 +56,9 @@ class AMPRModel(nn.Module):
     """
 
     def __init__(self, d_hidden=512, n_terms=489, dropout_3di=0.15, dropout_ppi=0.25,
-                 classifier='both', go_emb_dim=768, ppi_dim=128):
-
+                 classifier='both', go_emb_dim=768, ppi_dim=128,
+                 structure_modality='prostt5',
+                 gnn_input_dim=26, gnn_hidden_dim=256):
         super().__init__()
 
         self.d_hidden = d_hidden
@@ -65,30 +66,46 @@ class AMPRModel(nn.Module):
         self.dropout_3di = dropout_3di
         self.dropout_ppi = dropout_ppi
         self.classifier_type = classifier
+        self.structure_modality = structure_modality
 
         self.proj_seq = ProjectionHead(1024, d_hidden)
-        self.proj_3di = ProjectionHead(1024, d_hidden)
         self.proj_ppi = ProjectionHead(ppi_dim, d_hidden)
 
-        self.gating = GatingNetwork(d_hidden)
+        if structure_modality == 'prostt5':
+            self.proj_3di = ProjectionHead(1024, d_hidden)
+            self.gnn = None
+        elif structure_modality == 'gnn':
+            from ampr.models.gnn_encoder import GNNEncoder
+            self.proj_3di = None
+            self.gnn = GNNEncoder(input_dim=gnn_input_dim,
+                                  hidden_dim=gnn_hidden_dim,
+                                  output_dim=d_hidden)
+        else:
+            raise ValueError(f"unknown structure_modality: {structure_modality}")
 
+        self.gating = GatingNetwork(d_hidden)
         self.linear_head = nn.Linear(d_hidden, n_terms) if classifier in ['linear', 'both'] else None
         self.go_emb_proj = nn.Linear(go_emb_dim, d_hidden) if classifier in ['biobert', 'both'] else None
 
         logger.info(f"[MODEL] AMPRModel initialized")
+        logger.info(f"[MODEL]   structure_modality={structure_modality}")
         logger.info(f"[MODEL]   d_hidden={d_hidden}, n_terms={n_terms}")
-        logger.info(f"[MODEL]   dropout: 3di={dropout_3di}, ppi={dropout_ppi}")
         logger.info(f"[MODEL]   classifier={classifier}")
 
-    def forward(self, x_seq, x_3di, x_ppi, go_emb=None, return_alphas=False):
+    def forward(self, x_seq, x_3di, x_ppi, go_emb=None,
+                cmap=None, cmap_mask=None, seq_1hot=None,
+                return_alphas=False):
         """
         Forward pass.
 
         Args:
             x_seq: (batch, 1024)
-            x_3di: (batch, 1024)
-            x_ppi: (batch, 128)
-            go_emb: (n_terms, 768) if using BioBERT head
+            x_3di: (batch, 1024) — used in prostt5 mode; ignored in gnn mode
+            x_ppi: (batch, ppi_dim)
+            go_emb: (n_terms, go_emb_dim) if using BioBERT head
+            cmap: (batch, L, L) float32 — required in gnn mode
+            cmap_mask: (batch, L) bool — required in gnn mode
+            seq_1hot: (batch, L, 26) float32 — required in gnn mode
             return_alphas: bool
 
         Returns:
@@ -98,8 +115,14 @@ class AMPRModel(nn.Module):
         batch_size = x_seq.size(0)
 
         h_seq = self.proj_seq(x_seq)
-        h_3di = self.proj_3di(x_3di)
         h_ppi = self.proj_ppi(x_ppi)
+
+        if self.structure_modality == 'prostt5':
+            h_3di = self.proj_3di(x_3di)
+        else:  # gnn
+            assert cmap is not None and cmap_mask is not None and seq_1hot is not None, \
+                "GNN mode requires cmap, cmap_mask, seq_1hot in batch"
+            h_3di = self.gnn(seq_1hot, cmap, cmap_mask)
 
         if self.training:
             # Inverted modality dropout: scale kept vectors by 1/(1-p) so
