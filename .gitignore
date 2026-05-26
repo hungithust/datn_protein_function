@@ -7,3 +7,5 @@ results/
 
 baselines/deepfri/pretrained/
 results/baselines/
+# DeepFRI/
+.worktrees/
