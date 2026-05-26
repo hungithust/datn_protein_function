@@ -71,28 +71,43 @@ def load_deepfri_model(weights_path: Path):
         "CuDNNLSTM": _CuDNNLSTM,
     }
 
-    # Keras 3 deserialize_node builds error messages via repr(layer._inbound_nodes).
-    # ListWrapper.__repr__ in TF trackable traverses the full graph recursively →
-    # exponential traversal on a MERGED model with 50+ layers. Patch to O(1).
+    # --- Keras 3 compatibility patches for legacy Keras 2 HDF5 MERGED models ---
+
+    # 1. ListWrapper.__repr__ O(1) patch (prevents exponential repr traversal)
     try:
         import tensorflow.python.trackable.data_structures as _ds
         _ds.ListWrapper.__repr__ = lambda self: f"ListWrapper(len={len(self._storage)})"
     except Exception:
         pass
 
-    import signal, traceback as _tb
+    # 2. deserialize_node node-index patch:
+    #    Keras 2 HDF5 stores inbound_node_index=1 for Functional sub-model outputs
+    #    (Keras 2 had a built-in node at index 0). Keras 3 has no built-in node,
+    #    so index 0 is the first real node. Without this patch, functional_from_config
+    #    loops forever because len(_inbound_nodes)<=1 is always True.
+    #    get_tensor() already does this adjustment; deserialize_node() does not.
+    try:
+        import keras.src.models.functional as _kf
+        _orig_deserialize_node = _kf.deserialize_node
 
-    def _alarm(signum, frame):
-        print("\n=== HANG DETECTED — stack trace ===", flush=True)
-        _tb.print_stack(frame)
-        print("===================================\n", flush=True)
-        signal.alarm(60)
+        def _patched_deserialize_node(node_data, created_layers):
+            if isinstance(node_data, list):
+                patched = []
+                for inp in node_data:
+                    ln, ni, ti = inp[0], inp[1], inp[2]
+                    rest = list(inp[3:])
+                    lyr = created_layers.get(ln)
+                    if isinstance(lyr, _kf.Functional) and ni > 0:
+                        ni -= 1
+                    patched.append([ln, ni, ti] + rest)
+                return _orig_deserialize_node(patched, created_layers)
+            return _orig_deserialize_node(node_data, created_layers)
 
-    signal.signal(signal.SIGALRM, _alarm)
-    signal.alarm(60)
-    model = load_model(str(weights_path), custom_objects=custom, compile=False)
-    signal.alarm(0)
-    return model
+        _kf.deserialize_node = _patched_deserialize_node
+    except Exception:
+        pass
+
+    return load_model(str(weights_path), custom_objects=custom, compile=False)
 
 
 def main():
