@@ -46,6 +46,7 @@ def predict_one(model, cmap: np.ndarray, seq: str) -> np.ndarray:
 
 def load_deepfri_model(weights_path: Path):
     """Lazy TF import so non-TF environments don't break the test runner."""
+    import signal, traceback as _tb
     import tensorflow as tf
     from tensorflow.keras.models import load_model
     import sys
@@ -54,9 +55,6 @@ def load_deepfri_model(weights_path: Path):
     sys.path.insert(0, str(_root / "DeepFRI"))
     from deepfrier.layers import GraphConv, MultiGraphConv, SumPooling, FuncPredictor
 
-    # DeepFRI weights were saved with CuDNNLSTM(time_major=False).
-    # Keras 3 removed both CuDNNLSTM and the time_major arg from LSTM.
-    # Wrapper absorbs time_major so deserialization doesn't crash.
     class _CuDNNLSTM(tf.keras.layers.LSTM):
         def __init__(self, *args, time_major=False, **kwargs):
             super().__init__(*args, **kwargs)
@@ -73,7 +71,20 @@ def load_deepfri_model(weights_path: Path):
         "FuncPredictor": FuncPredictor,
         "CuDNNLSTM": _CuDNNLSTM,
     }
-    return load_model(str(weights_path), custom_objects=custom, compile=False)
+
+    # Diagnostic: print stack trace after 60s hang to find exact hang location
+    def _alarm(signum, frame):
+        print("\n=== HANG DETECTED — stack trace ===", flush=True)
+        _tb.print_stack(frame)
+        print("===================================\n", flush=True)
+        signal.alarm(60)  # keep firing every 60s
+
+    signal.signal(signal.SIGALRM, _alarm)
+    signal.alarm(60)
+    log.info("calling load_model (timeout probe active)")
+    model = load_model(str(weights_path), custom_objects=custom, compile=False)
+    signal.alarm(0)
+    return model
 
 
 def main():
