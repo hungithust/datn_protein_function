@@ -47,7 +47,7 @@ def load_deepfri_model(weights_path: Path):
     from pathlib import Path as _Path
     _root = _Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(_root / "DeepFRI"))
-    from deepfrier.layers import GraphConv, MultiGraphConv, SumPooling
+    from deepfrier.layers import GraphConv, MultiGraphConv, SumPooling, FuncPredictor
 
     # DeepFRI weights were saved with CuDNNLSTM(time_major=False).
     # Keras 3 removed both CuDNNLSTM and the time_major arg from LSTM.
@@ -65,6 +65,7 @@ def load_deepfri_model(weights_path: Path):
         "GraphConv": GraphConv,
         "MultiGraphConv": MultiGraphConv,
         "SumPooling": SumPooling,
+        "FuncPredictor": FuncPredictor,
         "CuDNNLSTM": _CuDNNLSTM,
     }
     return load_model(str(weights_path), custom_objects=custom, compile=False)
