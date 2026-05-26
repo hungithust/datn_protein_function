@@ -80,7 +80,19 @@ def load_deepfri_model(weights_path: Path):
     except Exception:
         pass
 
-    return load_model(str(weights_path), custom_objects=custom, compile=False)
+    import signal, traceback as _tb
+
+    def _alarm(signum, frame):
+        print("\n=== HANG DETECTED — stack trace ===", flush=True)
+        _tb.print_stack(frame)
+        print("===================================\n", flush=True)
+        signal.alarm(60)
+
+    signal.signal(signal.SIGALRM, _alarm)
+    signal.alarm(60)
+    model = load_model(str(weights_path), custom_objects=custom, compile=False)
+    signal.alarm(0)
+    return model
 
 
 def main():
