@@ -7,6 +7,11 @@ Saves to results/baselines/deepfri/predictions_{ont}.npz with keys:
     prot_ids: (N_test,)                  array of strings
 """
 
+import os
+# Must be set before TF is imported — prevents cuDNN LSTM kernel compilation hang
+# (Keras 3 + CUDA + dynamic-length LSTM → infinite hang on first build)
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+
 import argparse
 import json
 import logging
@@ -31,21 +36,17 @@ def seq2onehot(seq: str) -> np.ndarray:
 
 
 def predict_one(model, cmap: np.ndarray, seq: str) -> np.ndarray:
-    import tensorflow as tf
     A = (cmap < CMAP_THRESHOLD).astype(np.float32)
     S = seq2onehot(seq)
-    A = tf.constant(A[None, ...])  # (1, L, L)
-    S = tf.constant(S[None, ...])  # (1, L, 26)
-    out = model([A, S], training=False)
-    return out.numpy().reshape(-1)
+    A = A[None, ...]  # (1, L, L)
+    S = S[None, ...]  # (1, L, 26)
+    out = model.predict([A, S], verbose=0)
+    return out.reshape(-1)
 
 
 def load_deepfri_model(weights_path: Path):
     """Lazy TF import so non-TF environments don't break the test runner."""
     import tensorflow as tf
-    # Disable XLA JIT and force eager — legacy LSTM w/ dynamic shapes hangs otherwise
-    tf.config.optimizer.set_jit(False)
-    tf.config.run_functions_eagerly(True)
     from tensorflow.keras.models import load_model
     import sys
     from pathlib import Path as _Path
