@@ -85,6 +85,8 @@ def main():
         protein_order_path=data_cfg['protein_order'],
         branch=config['branch'],
         split=bootstrap_split,
+        use_cmap=data_cfg.get('use_cmap', False),
+        cmap_h5_paths=data_cfg.get('cmap_h5'),
     )
     log.info(f"{bootstrap_split.capitalize()} set: {len(dataset)} proteins")
 
@@ -96,6 +98,9 @@ def main():
         classifier=config['model']['classifier'],
         go_emb_dim=config['model']['go_emb_dim'],
         ppi_dim=config['model'].get('ppi_dim', 128),
+        structure_modality=config['model'].get('structure_modality', 'prostt5'),
+        gnn_input_dim=config['model'].get('gnn_input_dim', 26),
+        gnn_hidden_dim=config['model'].get('gnn_hidden_dim', 256),
     )
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     log.info(f"Model trainable params: {n_params:,}")
