@@ -43,17 +43,18 @@ def load_deepfri_model(weights_path: Path):
     """Lazy TF import so non-TF environments don't break the test runner."""
     import tensorflow as tf
     from tensorflow.keras.models import load_model
-    # DeepFRI uses custom layers; load via custom_objects.
-    # Import from DeepFRI source.
     import sys
     from pathlib import Path as _Path
-    # DeepFRI repo cloned at <project_root>/DeepFRI/
-    # deepfrier package lives at DeepFRI/deepfrier/ (one level, not two)
     _root = _Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(_root / "DeepFRI"))
     from deepfrier.layers import GraphConv, MultiGraphConv, SumPooling
-    custom = {"GraphConv": GraphConv, "MultiGraphConv": MultiGraphConv,
-              "SumPooling": SumPooling}
+    custom = {
+        "GraphConv": GraphConv,
+        "MultiGraphConv": MultiGraphConv,
+        "SumPooling": SumPooling,
+        # CuDNNLSTM was removed in Keras 3 / TF 2.16+ — alias to standard LSTM
+        "CuDNNLSTM": tf.keras.layers.LSTM,
+    }
     return load_model(str(weights_path), custom_objects=custom, compile=False)
 
 
