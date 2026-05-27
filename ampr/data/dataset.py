@@ -2,6 +2,9 @@
 
 import json
 import logging
+from pathlib import Path
+
+import h5py
 
 import numpy as np
 import torch
@@ -189,3 +192,111 @@ def get_dataloaders(data_config, batch_size, num_workers=0):
     test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, collate_fn=collate_fn)
 
     return train_loader, valid_loader, test_loader, train_ds
+
+
+class AMPRDatasetV3(Dataset):
+    """
+    Phase 3 dataset: ESM-2 per-residue (HDF5) + DeepGO PPI + contact maps.
+
+    Output per item:
+        x_seq_residue: (L, 1280) ESM-2 residue embeddings
+        cmap:          (L, L)    Ca-Ca distance A
+        x_ppi:         (256,)    DeepGO embedding (zero if missing)
+        ppi_mask:      bool      whether this protein has DeepGO embedding
+        labels:        (C,)
+        prot_id:       str
+    """
+
+    def __init__(self, esm2_h5: str, ppi_emb: str, ppi_mask: str, cmap_h5: str,
+                 labels: str, dag_matrix: str, go_emb: str, splits: str,
+                 protein_order: str, branch: str = 'MF', split: str = 'train',
+                 max_len: int = 1000):
+        self.esm2_path = esm2_h5
+        self.cmap_path = cmap_h5
+        self._esm2 = None
+        self._cmap = None
+
+        self.ppi_emb = np.load(ppi_emb).astype(np.float32)
+        self.ppi_mask = np.load(ppi_mask).astype(bool)
+        self.labels = np.load(labels).astype(np.float32)
+        self._dag_matrix = np.load(dag_matrix).astype(np.float32)
+        self._go_emb = np.load(go_emb).astype(np.float32)
+        self.max_len = max_len
+
+        order = json.loads(Path(protein_order).read_text())
+        if isinstance(order, dict):
+            order = [k for k, _ in sorted(order.items(), key=lambda kv: kv[1])]
+        self._prot2idx = {p: i for i, p in enumerate(order)}
+
+        with open(splits) as f:
+            split_ids = json.load(f).get(split, [])
+
+        # Filter: must exist in protein_order + ESM2 HDF5 + cmap HDF5
+        with h5py.File(esm2_h5, 'r') as fe, h5py.File(cmap_h5, 'r') as fc:
+            esm_keys = set(fe.keys())
+            cm_keys = set(fc.keys())
+        self.protein_ids = [p for p in split_ids
+                            if p in self._prot2idx and p in esm_keys and p in cm_keys]
+        logger.info(f"[DATASET-V3] {branch}/{split}: {len(self.protein_ids)} proteins "
+                    f"(filtered from {len(split_ids)})")
+
+    def __len__(self):
+        return len(self.protein_ids)
+
+    def _open(self):
+        if self._esm2 is None:
+            self._esm2 = h5py.File(self.esm2_path, 'r')
+        if self._cmap is None:
+            self._cmap = h5py.File(self.cmap_path, 'r')
+
+    def __getitem__(self, idx):
+        self._open()
+        pid = self.protein_ids[idx]
+        row = self._prot2idx[pid]
+        res = self._esm2[pid][:]
+        cmap = self._cmap[pid][:]
+        L = min(res.shape[0], cmap.shape[0], self.max_len)
+        res = res[:L]
+        cmap = cmap[:L, :L]
+        return {
+            'x_seq_residue': torch.from_numpy(res),
+            'cmap': torch.from_numpy(cmap),
+            'x_ppi': torch.from_numpy(self.ppi_emb[row]),
+            'ppi_mask': torch.tensor(bool(self.ppi_mask[row])),
+            'labels': torch.from_numpy(self.labels[row]),
+            'prot_id': pid,
+        }
+
+    @property
+    def dag_matrix(self):
+        return torch.from_numpy(self._dag_matrix)
+
+    @property
+    def go_emb(self):
+        return torch.from_numpy(self._go_emb)
+
+
+def collate_variable_length(batch: list) -> dict:
+    """Pad variable-length residue embeddings + cmaps to L_max in batch."""
+    L_max = max(item['x_seq_residue'].shape[0] for item in batch)
+    B = len(batch)
+    D = batch[0]['x_seq_residue'].shape[1]
+
+    x_seq = torch.zeros(B, L_max, D, dtype=torch.float32)
+    cmap = torch.full((B, L_max, L_max), 9999.0, dtype=torch.float32)
+    seq_mask = torch.zeros(B, L_max, dtype=torch.bool)
+    for i, item in enumerate(batch):
+        L = item['x_seq_residue'].shape[0]
+        x_seq[i, :L] = item['x_seq_residue']
+        cmap[i, :L, :L] = item['cmap']
+        seq_mask[i, :L] = True
+
+    return {
+        'x_seq_residue': x_seq,
+        'seq_mask': seq_mask,
+        'cmap': cmap,
+        'x_ppi': torch.stack([b['x_ppi'] for b in batch]),
+        'ppi_mask': torch.stack([b['ppi_mask'] for b in batch]),
+        'labels': torch.stack([b['labels'] for b in batch]),
+        'prot_id': [b['prot_id'] for b in batch],
+    }
