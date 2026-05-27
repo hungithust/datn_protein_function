@@ -1,57 +1,94 @@
+# ampr/training/loss.py — full new content
 """Custom loss functions for AMPR."""
 
 import torch
 import torch.nn as nn
 
 
+class AsymmetricLoss(nn.Module):
+    """
+    Asymmetric Loss for multi-label classification (Ridnik et al., ICCV 2021).
+
+    Down-weight easy negatives more aggressively than positives, with
+    probability shifting (clip) to drop very-easy negatives entirely.
+    """
+
+    def __init__(self, gamma_neg: float = 4.0, gamma_pos: float = 0.0,
+                 clip: float = 0.05, eps: float = 1e-8, reduction: str = 'mean'):
+        super().__init__()
+        self.gamma_neg = gamma_neg
+        self.gamma_pos = gamma_pos
+        self.clip = clip
+        self.eps = eps
+        self.reduction = reduction
+
+    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        x_sig = torch.sigmoid(logits)
+        xs_pos = x_sig
+        xs_neg = 1.0 - x_sig
+        if self.clip is not None and self.clip > 0:
+            xs_neg = (xs_neg + self.clip).clamp(max=1.0)
+
+        log_pos = torch.log(xs_pos.clamp(min=self.eps))
+        log_neg = torch.log(xs_neg.clamp(min=self.eps))
+
+        loss_pos = labels * log_pos
+        loss_neg = (1.0 - labels) * log_neg
+
+        if self.gamma_neg > 0 or self.gamma_pos > 0:
+            pt0 = xs_pos * labels
+            pt1 = xs_neg * (1.0 - labels)
+            pt = pt0 + pt1
+            gamma = self.gamma_pos * labels + self.gamma_neg * (1.0 - labels)
+            w = torch.pow(1.0 - pt, gamma)
+            loss = -(loss_pos + loss_neg) * w
+        else:
+            loss = -(loss_pos + loss_neg)
+
+        if self.reduction == 'mean':
+            return loss.mean()
+        if self.reduction == 'sum':
+            return loss.sum()
+        return loss
+
+
 class AMPRLoss(nn.Module):
     """
-    AMPR total loss: BCE + λ·DAG_loss
+    AMPR total loss: classification + λ·DAG.
 
-    DAG_loss enforces GO True Path Rule: penalizes max(0, P_child - P_parent)²
-    Vectorized over all child-parent pairs — avoids Python loop over n_terms.
+    loss_type:
+        'bce' — BCEWithLogitsLoss (default backward-compat)
+        'asl' — AsymmetricLoss
     """
 
-    def __init__(self, dag_matrix, lambda_dag=0.5):
-        """
-        Args:
-            dag_matrix: (C, C) float tensor, A[i,j]=1 if j is parent of i
-            lambda_dag: weight of DAG penalty term
-        """
+    def __init__(self, dag_matrix, lambda_dag: float = 0.5,
+                 loss_type: str = 'bce',
+                 asl_gamma_neg: float = 4.0, asl_gamma_pos: float = 0.0,
+                 asl_clip: float = 0.05):
         super().__init__()
         self.register_buffer('dag_matrix', dag_matrix)
         self.lambda_dag = lambda_dag
-        self.bce_loss = nn.BCEWithLogitsLoss()
+        self.loss_type = loss_type
+        if loss_type == 'bce':
+            self.cls_loss = nn.BCEWithLogitsLoss()
+        elif loss_type == 'asl':
+            self.cls_loss = AsymmetricLoss(asl_gamma_neg, asl_gamma_pos, asl_clip)
+        else:
+            raise ValueError(f"unknown loss_type: {loss_type}")
         self._n_edges = float(dag_matrix.sum().item())
 
     def forward(self, logits, labels):
-        """
-        Args:
-            logits: (batch, C)
-            labels: (batch, C)
-
-        Returns:
-            loss: scalar tensor
-            loss_dict: {'bce': float, 'dag': float} for logging
-        """
-        bce = self.bce_loss(logits, labels)
+        cls = self.cls_loss(logits, labels)
 
         if self._n_edges == 0:
             dag_penalty = torch.tensor(0.0, device=logits.device)
         else:
             probs = torch.sigmoid(logits)
-
-            # probs_child[b, i, 1]  — expand for broadcasting
-            # probs_parent[b, 1, j] — expand for broadcasting
-            # dag_matrix[i, j] = 1 means j is parent of i
-            # violation[b,i,j] = relu(P_child_i - P_parent_j) * A[i,j]
-            probs_c = probs.unsqueeze(2)                     # (B, C, 1)
-            probs_p = probs.unsqueeze(1)                     # (B, 1, C)
-            mask = self.dag_matrix.unsqueeze(0)              # (1, C, C)
-
-            violation = torch.relu(probs_c - probs_p) * mask # (B, C, C)
+            probs_c = probs.unsqueeze(2)
+            probs_p = probs.unsqueeze(1)
+            mask = self.dag_matrix.unsqueeze(0)
+            violation = torch.relu(probs_c - probs_p) * mask
             dag_penalty = (violation ** 2).sum() / (self._n_edges * logits.size(0))
 
-        loss = bce + self.lambda_dag * dag_penalty
-
-        return loss, {'bce': bce.item(), 'dag': dag_penalty.item()}
+        loss = cls + self.lambda_dag * dag_penalty
+        return loss, {'cls': cls.item(), 'dag': dag_penalty.item()}
