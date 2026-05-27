@@ -282,7 +282,7 @@ class Trainer:
             self.scheduler.step()
 
             total_loss += loss.item()
-            total_bce  += loss_dict['bce']
+            total_bce  += loss_dict.get('cls', loss_dict.get('bce', 0))
             total_dag  += loss_dict['dag']
             alpha_accumulator.append(alphas.detach().mean(dim=0).cpu().numpy())
 
@@ -360,3 +360,35 @@ class Trainer:
             'fmax': fmax,
         }, ckpt_path)
         self.logger.info(f"[CKPT] Saved epoch {epoch} — Fmax={fmax:.4f} → {ckpt_path}")
+
+
+def train_one_epoch_v3(model, loader, loss_fn, optimizer, go_emb, device='cuda'):
+    """One training epoch over an AMPRDatasetV3 DataLoader.
+
+    Args:
+        model: AMPRModelV3
+        loader: DataLoader with collate_variable_length batches
+        loss_fn: AMPRLoss (supports loss_type='asl')
+        optimizer: torch optimizer
+        go_emb: (C, go_emb_dim) tensor
+        device: 'cpu' or 'cuda'
+
+    Returns:
+        avg_loss: float — loss averaged over proteins in epoch
+    """
+    model.train()
+    model.to(device)
+    go_emb = go_emb.to(device)
+    total = 0.0
+    n = 0
+    for batch in loader:
+        batch_dev = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
+        logits = model(batch_dev, go_emb=go_emb)
+        loss, parts = loss_fn(logits, batch_dev['labels'])
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        bs = batch_dev['labels'].size(0)
+        total += loss.item() * bs
+        n += bs
+    return total / max(n, 1)
