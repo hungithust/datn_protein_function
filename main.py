@@ -5,6 +5,9 @@ AMPR: Adaptive Multimodal Protein Representation — entry point.
 Usage (training, full pipeline):
     python main.py --config configs/mf.yaml
 
+Usage (v3 config):
+    python main.py --config configs/mf_v3.yaml [--dry_run]
+
 Usage (eval only, on a specific test split):
     python main.py --config configs/mf.yaml \
         --eval-only \
@@ -44,6 +47,157 @@ def seed_everything(seed):
     torch.cuda.manual_seed_all(seed)
 
 
+def _resolve_device(cfg_device: str) -> str:
+    if cfg_device == 'auto':
+        return 'cuda' if torch.cuda.is_available() else 'cpu'
+    return cfg_device
+
+
+def _run_v3(config: dict, args, log):
+    """V3 dispatch: ESM-2 residue + GNN cmap + DeepGO PPI + CrossModalFusion."""
+    import torch.nn as nn
+    from torch.utils.data import DataLoader
+
+    from ampr.data.dataset import AMPRDatasetV3, collate_variable_length
+    from ampr.models.ampr import AMPRModelV3
+    from ampr.training.loss import AMPRLoss
+    from ampr.training.trainer import train_one_epoch_v3
+    from ampr.evaluation.dag_inference import propagate_scores_upward
+    from ampr.evaluation.metrics import compute_fmax
+
+    data_cfg = config['data']
+    model_cfg = config['model']
+    train_cfg = config['training']
+    out_cfg = config['output']
+
+    device = _resolve_device(train_cfg.get('device', 'auto'))
+    log.info(f"[V3] device={device}")
+
+    def mk_dataset(split):
+        return AMPRDatasetV3(
+            esm2_h5=data_cfg['esm2_h5'],
+            ppi_emb=data_cfg['ppi_emb'],
+            ppi_mask=data_cfg['ppi_mask'],
+            cmap_h5=data_cfg['cmap_h5'],
+            labels=data_cfg['labels'],
+            dag_matrix=data_cfg['dag_matrix'],
+            go_emb=data_cfg['go_emb'],
+            splits=data_cfg['splits'],
+            protein_order=data_cfg['protein_order'],
+            branch=config['branch'],
+            split=split,
+            max_len=train_cfg.get('max_seq_len', 1000),
+        )
+
+    ds_train = mk_dataset('train')
+    ds_val = mk_dataset('valid')
+
+    if args.dry_run:
+        ds_train.protein_ids = ds_train.protein_ids[:50]
+        ds_val.protein_ids = ds_val.protein_ids[:20]
+        log.info(f"[V3] --dry_run: train={len(ds_train)}, val={len(ds_val)}")
+
+    num_workers = train_cfg.get('num_workers', 0)
+    ld_train = DataLoader(ds_train, batch_size=train_cfg['batch_size'],
+                          shuffle=True, collate_fn=collate_variable_length,
+                          num_workers=num_workers, pin_memory=(device == 'cuda'))
+    ld_val = DataLoader(ds_val, batch_size=train_cfg['batch_size'],
+                        shuffle=False, collate_fn=collate_variable_length,
+                        num_workers=num_workers, pin_memory=(device == 'cuda'))
+
+    # Load go_emb as tensor
+    go_emb = ds_train.go_emb.to(device)
+    go_emb_dim = go_emb.shape[1]
+
+    seq_cfg = model_cfg.get('seq', {})
+    gnn_cfg = model_cfg.get('gnn', {})
+    ppi_cfg = model_cfg.get('ppi', {})
+    fusion_cfg = model_cfg.get('fusion', {})
+
+    model = AMPRModelV3(
+        n_terms=config['n_terms'],
+        seq_dim=seq_cfg.get('d_model', 1280),
+        seq_n_heads=seq_cfg.get('n_heads', 8),
+        seq_n_layers=seq_cfg.get('n_transformer_layers', 2),
+        gnn_node_dim=gnn_cfg.get('node_dim', 256),
+        gnn_n_layers=gnn_cfg.get('n_layers', 3),
+        ppi_dim=ppi_cfg.get('in_dim', 256),
+        d_hidden=model_cfg.get('d_hidden', 512),
+        fusion_n_heads=fusion_cfg.get('n_heads', 8),
+        fusion_n_layers=fusion_cfg.get('n_layers', 2),
+        classifier=model_cfg.get('classifier', 'both'),
+        go_emb_dim=go_emb_dim,
+        cmap_threshold=gnn_cfg.get('cmap_threshold', 10.0),
+        dropout=seq_cfg.get('dropout', 0.1),
+    )
+
+    n_gpu = torch.cuda.device_count()
+    if n_gpu > 1:
+        log.info(f"[V3] DataParallel on {n_gpu} GPUs")
+        model = nn.DataParallel(model)
+    model = model.to(device)
+
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    log.info(f"[V3] Trainable params: {n_params:,}")
+
+    dag_np = ds_train.dag_matrix.numpy()
+    loss_fn = AMPRLoss(
+        ds_train.dag_matrix,
+        lambda_dag=train_cfg.get('lambda_dag', 0.5),
+        loss_type=train_cfg.get('loss_type', 'asl'),
+        asl_gamma_neg=train_cfg.get('asl_gamma_neg', 4.0),
+        asl_gamma_pos=train_cfg.get('asl_gamma_pos', 0.0),
+        asl_clip=train_cfg.get('asl_clip', 0.05),
+    )
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=train_cfg.get('lr', 1e-3))
+
+    ckpt_dir = Path(out_cfg['checkpoint_dir'])
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    best_fmax_dag = -1.0
+    epochs = 1 if args.dry_run else train_cfg.get('epochs', 50)
+
+    for epoch in range(1, epochs + 1):
+        # Use the unwrapped model for train_one_epoch_v3 since it handles .to(device) internally
+        raw_model = model.module if isinstance(model, nn.DataParallel) else model
+        train_loss = train_one_epoch_v3(raw_model, ld_train, loss_fn, optimizer,
+                                        go_emb=go_emb, device=device)
+
+        # Val inference
+        raw_model.eval()
+        probs_list, labels_list = [], []
+        with torch.no_grad():
+            for batch in ld_val:
+                batch_dev = {k: (v.to(device) if torch.is_tensor(v) else v)
+                             for k, v in batch.items()}
+                logits = raw_model(batch_dev, go_emb=go_emb)
+                probs_list.append(torch.sigmoid(logits).cpu().numpy())
+                labels_list.append(batch['labels'].numpy())
+
+        if probs_list:
+            probs = np.concatenate(probs_list)
+            labels = np.concatenate(labels_list)
+            probs_dag = propagate_scores_upward(probs, dag_np)
+            fmax_raw, _ = compute_fmax(labels, probs)
+            fmax_dag, _ = compute_fmax(labels, probs_dag)
+        else:
+            fmax_raw = fmax_dag = 0.0
+
+        log.info(f"[V3] Epoch {epoch}/{epochs}: loss={train_loss:.4f} "
+                 f"val_Fmax_raw={fmax_raw:.4f} val_Fmax_dag={fmax_dag:.4f}")
+
+        if fmax_dag > best_fmax_dag:
+            best_fmax_dag = fmax_dag
+            ckpt_path = ckpt_dir / 'best.pt'
+            torch.save({'epoch': epoch, 'model': raw_model.state_dict(),
+                        'fmax_dag': fmax_dag, 'fmax_raw': fmax_raw},
+                       str(ckpt_path))
+            log.info(f"[V3] Saved best checkpoint (fmax_dag={fmax_dag:.4f})")
+
+    log.info(f"[V3] Training complete. Best val Fmax (DAG): {best_fmax_dag:.4f}")
+
+
 def main():
     parser = argparse.ArgumentParser(description='AMPR training / evaluation')
     parser.add_argument('--config', type=str, required=True)
@@ -54,6 +208,8 @@ def main():
                         help='Checkpoint path (defaults to <checkpoint_dir>/best.pt)')
     parser.add_argument('--test-split', type=str, default='test',
                         help='splits.json key to evaluate (test, test_LT_30, test_LT_95, ...)')
+    parser.add_argument('--dry_run', action='store_true',
+                        help='Limit to ~50 proteins for quick smoke check (v3 only)')
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
@@ -62,17 +218,25 @@ def main():
     log = setup_logging(config['output']['log_file'])
     log.info(f"Config: {args.config}")
     log.info(f"Branch: {config['branch']} | n_terms: {config['n_terms']}")
+
+    seed_everything(args.seed)
+    log.info(f"Seed: {args.seed}")
+
+    # --- V3 dispatch ---
+    model_version = config.get('model', {}).get('version', 'v1')
+    is_v3 = (model_version == 'v3') or ('esm2_h5' in config.get('data', {}))
+    if is_v3:
+        log.info("[V3] Detected v3 config — using AMPRModelV3 pipeline")
+        _run_v3(config, args, log)
+        return
+
+    # --- V1/V2 legacy path ---
     log.info(f"Mode: {'EVAL-ONLY' if args.eval_only else 'TRAIN+EVAL'}")
     if args.eval_only:
         log.info(f"Eval split: {args.test_split}")
     log.info(f"Device: {config['training']['device']}")
 
-    seed_everything(args.seed)
-    log.info(f"Seed: {args.seed}")
-
     data_cfg = config['data']
-    # In eval-only mode the dataset still needs DAG matrix + GO emb (always present
-    # in any split). Use the eval split directly to avoid loading the train split.
     bootstrap_split = args.test_split if args.eval_only else 'train'
     dataset = AMPRDataset(
         seq_emb_path=data_cfg['seq_emb'],
