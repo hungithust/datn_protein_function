@@ -55,7 +55,6 @@ def _resolve_device(cfg_device: str) -> str:
 
 def _run_v3(config: dict, args, log):
     """V3 dispatch: ESM-2 residue + GNN cmap + DeepGO PPI + CrossModalFusion."""
-    import torch.nn as nn
     from torch.utils.data import DataLoader
 
     from ampr.data.dataset import AMPRDatasetV3, collate_variable_length
@@ -131,10 +130,6 @@ def _run_v3(config: dict, args, log):
         dropout=seq_cfg.get('dropout', 0.1),
     )
 
-    n_gpu = torch.cuda.device_count()
-    if n_gpu > 1:
-        log.info(f"[V3] DataParallel on {n_gpu} GPUs")
-        model = nn.DataParallel(model)
     model = model.to(device)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -149,6 +144,7 @@ def _run_v3(config: dict, args, log):
         asl_gamma_pos=train_cfg.get('asl_gamma_pos', 0.0),
         asl_clip=train_cfg.get('asl_clip', 0.05),
     )
+    loss_fn = loss_fn.to(device)  # move dag_matrix buffer to GPU
 
     optimizer = torch.optim.Adam(model.parameters(), lr=train_cfg.get('lr', 1e-3))
 
@@ -159,19 +155,17 @@ def _run_v3(config: dict, args, log):
     epochs = 1 if args.dry_run else train_cfg.get('epochs', 50)
 
     for epoch in range(1, epochs + 1):
-        # Use the unwrapped model for train_one_epoch_v3 since it handles .to(device) internally
-        raw_model = model.module if isinstance(model, nn.DataParallel) else model
-        train_loss = train_one_epoch_v3(raw_model, ld_train, loss_fn, optimizer,
+        train_loss = train_one_epoch_v3(model, ld_train, loss_fn, optimizer,
                                         go_emb=go_emb, device=device)
 
         # Val inference
-        raw_model.eval()
+        model.eval()
         probs_list, labels_list = [], []
         with torch.no_grad():
             for batch in ld_val:
                 batch_dev = {k: (v.to(device) if torch.is_tensor(v) else v)
                              for k, v in batch.items()}
-                logits = raw_model(batch_dev, go_emb=go_emb)
+                logits = model(batch_dev, go_emb=go_emb)
                 probs_list.append(torch.sigmoid(logits).cpu().numpy())
                 labels_list.append(batch['labels'].numpy())
 
@@ -190,7 +184,7 @@ def _run_v3(config: dict, args, log):
         if fmax_dag > best_fmax_dag:
             best_fmax_dag = fmax_dag
             ckpt_path = ckpt_dir / 'best.pt'
-            torch.save({'epoch': epoch, 'model': raw_model.state_dict(),
+            torch.save({'epoch': epoch, 'model': model.state_dict(),
                         'fmax_dag': fmax_dag, 'fmax_raw': fmax_raw},
                        str(ckpt_path))
             log.info(f"[V3] Saved best checkpoint (fmax_dag={fmax_dag:.4f})")
