@@ -140,6 +140,20 @@ def _run_v3(config: dict, args, log):
     log.info(f"[V3] Trainable params: {n_params:,}")
 
     dag_np = ds_train.dag_matrix.numpy()
+
+    # pos_weight per-class từ nhãn TRAIN (chỉ dùng cho loss bce). Cap để tránh
+    # các term hiếm tạo trọng số quá lớn gây bất ổn.
+    pos_weight = None
+    if train_cfg.get('loss_type', 'asl') == 'bce':
+        train_rows = [ds_train._prot2idx[p] for p in ds_train.protein_ids]
+        y_train = ds_train.labels[train_rows]                      # (n_train, C)
+        pos = y_train.sum(axis=0)                                  # số dương / term
+        neg = y_train.shape[0] - pos
+        pw_cap = float(train_cfg.get('pos_weight_cap', 50.0))
+        pos_weight = np.clip(neg / np.maximum(pos, 1.0), 1.0, pw_cap).astype('float32')
+        log.info(f"[V3] pos_weight per-class: mean={pos_weight.mean():.2f} "
+                 f"min={pos_weight.min():.2f} max={pos_weight.max():.2f} cap={pw_cap}")
+
     loss_fn = AMPRLoss(
         ds_train.dag_matrix,
         lambda_dag=train_cfg.get('lambda_dag', 0.5),
@@ -147,10 +161,12 @@ def _run_v3(config: dict, args, log):
         asl_gamma_neg=train_cfg.get('asl_gamma_neg', 4.0),
         asl_gamma_pos=train_cfg.get('asl_gamma_pos', 0.0),
         asl_clip=train_cfg.get('asl_clip', 0.05),
+        pos_weight=pos_weight,
     )
-    loss_fn = loss_fn.to(device)  # move dag_matrix buffer to GPU
+    loss_fn = loss_fn.to(device)  # move dag_matrix + pos_weight buffers to GPU
 
     optimizer = torch.optim.Adam(model.parameters(), lr=train_cfg.get('lr', 1e-3))
+    grad_clip = float(train_cfg.get('grad_clip', 0.0))  # 0 = off
 
     ckpt_dir = Path(out_cfg['checkpoint_dir'])
     ckpt_dir.mkdir(parents=True, exist_ok=True)
