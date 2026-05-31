@@ -64,13 +64,19 @@ class AMPRLoss(nn.Module):
     def __init__(self, dag_matrix, lambda_dag: float = 0.5,
                  loss_type: str = 'bce',
                  asl_gamma_neg: float = 4.0, asl_gamma_pos: float = 0.0,
-                 asl_clip: float = 0.05):
+                 asl_clip: float = 0.05,
+                 pos_weight=None):
         super().__init__()
         self.register_buffer('dag_matrix', dag_matrix)
         self.lambda_dag = lambda_dag
         self.loss_type = loss_type
         if loss_type == 'bce':
-            self.cls_loss = nn.BCEWithLogitsLoss()
+            # pos_weight (per-class) chống mất cân bằng lớp: gradient positive sống
+            # ngay cả khi logit rất âm (BCEWithLogitsLoss ổn định số học).
+            # BCEWithLogitsLoss tự register pos_weight làm buffer -> .to(device) sẽ chuyển.
+            if pos_weight is not None and not torch.is_tensor(pos_weight):
+                pos_weight = torch.as_tensor(pos_weight, dtype=torch.float32)
+            self.cls_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
         elif loss_type == 'asl':
             self.cls_loss = AsymmetricLoss(asl_gamma_neg, asl_gamma_pos, asl_clip)
         else:

@@ -160,7 +160,8 @@ def _run_v3(config: dict, args, log):
 
     for epoch in range(1, epochs + 1):
         train_loss = train_one_epoch_v3(model, ld_train, loss_fn, optimizer,
-                                        go_emb=go_emb, device=device)
+                                        go_emb=go_emb, device=device,
+                                        grad_clip=grad_clip)
 
         # Val inference
         model.eval()

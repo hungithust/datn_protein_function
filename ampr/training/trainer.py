@@ -362,7 +362,8 @@ class Trainer:
         self.logger.info(f"[CKPT] Saved epoch {epoch} — Fmax={fmax:.4f} → {ckpt_path}")
 
 
-def train_one_epoch_v3(model, loader, loss_fn, optimizer, go_emb, device='cuda'):
+def train_one_epoch_v3(model, loader, loss_fn, optimizer, go_emb, device='cuda',
+                       grad_clip=0.0):
     """One training epoch over an AMPRDatasetV3 DataLoader.
 
     Args:
@@ -395,6 +396,8 @@ def train_one_epoch_v3(model, loader, loss_fn, optimizer, go_emb, device='cuda')
             grad_norm_first = float(gn)
             print(f"[DIAG] grad_norm(first batch)={grad_norm_first:.4e} "
                   f"cls={parts['cls']:.4f} dag={parts['dag']:.4f}")
+        if grad_clip and grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
         bs = batch_dev['labels'].size(0)
         total += loss.item() * bs
