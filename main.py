@@ -107,6 +107,10 @@ def _run_v3(config: dict, args, log):
     # Load go_emb as tensor
     go_emb = ds_train.go_emb.to(device)
     go_emb_dim = go_emb.shape[1]
+    # [DIAG] go_emb chưa chuẩn hoá -> logit bio = proj(z) @ go_emb.t() có thể bão hoà
+    log.info(f"[DIAG] go_emb shape={tuple(go_emb.shape)} "
+             f"row_norm_mean={go_emb.norm(dim=1).mean().item():.3f} "
+             f"abs_max={go_emb.abs().max().item():.3f}")
 
     seq_cfg = model_cfg.get('seq', {})
     gnn_cfg = model_cfg.get('gnn', {})
@@ -172,6 +176,14 @@ def _run_v3(config: dict, args, log):
         if probs_list:
             probs = np.concatenate(probs_list)
             labels = np.concatenate(labels_list)
+            # [DIAG] collapse check: std giữa các protein cho mỗi class ~0 => model
+            # xuất gần như cùng 1 vector cho mọi protein (chỉ học class-prior).
+            log.info(
+                f"[DIAG] probs mean={probs.mean():.4f} global_std={probs.std():.4f} "
+                f"cross_protein_std={probs.std(axis=0).mean():.6f} "
+                f"per_protein_std={probs.std(axis=1).mean():.6f} "
+                f"frac>0.5={(probs > 0.5).mean():.4f} | label_pos_rate={labels.mean():.4f}"
+            )
             probs_dag = propagate_scores_upward(probs, dag_np)
             fmax_raw, _ = compute_fmax(labels, probs)
             fmax_dag, _ = compute_fmax(labels, probs_dag)

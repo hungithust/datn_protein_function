@@ -381,12 +381,20 @@ def train_one_epoch_v3(model, loader, loss_fn, optimizer, go_emb, device='cuda')
     go_emb = go_emb.to(device)
     total = 0.0
     n = 0
+    grad_norm_first = None
     for batch in loader:
         batch_dev = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
         logits = model(batch_dev, go_emb=go_emb)
         loss, parts = loss_fn(logits, batch_dev['labels'])
         optimizer.zero_grad()
         loss.backward()
+        if grad_norm_first is None:
+            # [DIAG] tổng grad-norm batch đầu mỗi epoch; ~0 => gradient bão hoà (collapse)
+            gn = sum(p.grad.detach().norm() ** 2 for p in model.parameters()
+                     if p.grad is not None) ** 0.5
+            grad_norm_first = float(gn)
+            print(f"[DIAG] grad_norm(first batch)={grad_norm_first:.4e} "
+                  f"cls={parts['cls']:.4f} dag={parts['dag']:.4f}")
         optimizer.step()
         bs = batch_dev['labels'].size(0)
         total += loss.item() * bs
