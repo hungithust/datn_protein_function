@@ -4,7 +4,7 @@
 #     docker exec -it jupyterlab bash
 #     bash /raid/team/datn/scripts/launch_baseline.sh
 set -euo pipefail
-REPO_DIR=/raid/team/datn
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 mkdir -p logs
 
