@@ -2,23 +2,18 @@
 # scripts/server_setup.sh — one-time H200 environment bootstrap.
 # Idempotent: safe to re-run. MUST run INSIDE the jupyterlab NGC container:
 #     docker exec -it jupyterlab bash
-#     bash /workspace/datn/scripts/server_setup.sh
-# /workspace (container) == /raid/team (host). We isolate our extra deps in a
-# venv created with --system-site-packages so the container's CUDA-enabled
-# PyTorch is inherited (NEVER reinstall torch) and root site-packages stays clean.
+#     bash /raid/team/datn/scripts/server_setup.sh
+# We isolate our extra deps in a venv created with --system-site-packages so the
+# container's CUDA-enabled PyTorch is inherited (NEVER reinstall torch) and root
+# site-packages stays clean. (/raid/team is the persistent NVMe path.)
 set -euo pipefail
 
-REPO_DIR=/workspace/datn
+REPO_DIR=/raid/team/datn
 REPO_URL=https://github.com/hungithust/datn_protein_function
 VENV="$REPO_DIR/.venv"
 export KAGGLE_CONFIG_DIR="$REPO_DIR/.kaggle"
 
 # --- guard: must be inside the container -------------------------------------
-if [ ! -d /workspace ]; then
-  echo "[SETUP][ERR] /workspace not found — you are likely on the HOST."
-  echo "[SETUP][ERR] enter the container first:  docker exec -it jupyterlab bash"
-  exit 1
-fi
 if ! command -v python >/dev/null 2>&1; then
   echo "[SETUP][ERR] 'python' not found — not inside the jupyterlab container."
   echo "[SETUP][ERR] run:  docker exec -it jupyterlab bash"

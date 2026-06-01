@@ -2,9 +2,9 @@
 # scripts/launch_baseline.sh — one detached tmux session per branch, one GPU each.
 # Run INSIDE the jupyterlab container:
 #     docker exec -it jupyterlab bash
-#     bash /workspace/datn/scripts/launch_baseline.sh
+#     bash /raid/team/datn/scripts/launch_baseline.sh
 set -euo pipefail
-REPO_DIR=/workspace/datn
+REPO_DIR=/raid/team/datn
 cd "$REPO_DIR"
 mkdir -p logs
 

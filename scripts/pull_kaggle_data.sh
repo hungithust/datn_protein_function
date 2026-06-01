@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# scripts/pull_kaggle_data.sh — download precomputed AMPR datasets to /workspace.
+# scripts/pull_kaggle_data.sh — download precomputed AMPR datasets to /raid/team.
 # Run INSIDE the jupyterlab container after server_setup.sh:
 #     docker exec -it jupyterlab bash
-#     bash /workspace/datn/scripts/pull_kaggle_data.sh
+#     bash /raid/team/datn/scripts/pull_kaggle_data.sh
 set -euo pipefail
-REPO_DIR=/workspace/datn
+REPO_DIR=/raid/team/datn
 export KAGGLE_CONFIG_DIR="$REPO_DIR/.kaggle"
 # shellcheck disable=SC1091
 . "$REPO_DIR/.venv/bin/activate"
