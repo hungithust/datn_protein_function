@@ -4,7 +4,7 @@
 #     docker exec -it jupyterlab bash
 #     bash /raid/team/datn/scripts/pull_kaggle_data.sh
 set -euo pipefail
-REPO_DIR=/raid/team/datn
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export KAGGLE_CONFIG_DIR="$REPO_DIR/.kaggle"
 # shellcheck disable=SC1091
 . "$REPO_DIR/.venv/bin/activate"

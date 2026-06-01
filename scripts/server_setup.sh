@@ -8,7 +8,10 @@
 # site-packages stays clean. (/raid/team is the persistent NVMe path.)
 set -euo pipefail
 
-REPO_DIR=/raid/team/datn
+# Operate on the checkout this script lives in (avoids /workspace vs /raid/team
+# container-path confusion: inside the jupyterlab container /workspace is the
+# persistent mount; run this from your real checkout, e.g. /workspace/datn).
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_URL=https://github.com/hungithust/datn_protein_function
 VENV="$REPO_DIR/.venv"
 export KAGGLE_CONFIG_DIR="$REPO_DIR/.kaggle"
