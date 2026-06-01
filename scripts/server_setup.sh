@@ -29,6 +29,11 @@ if [ ! -d "$REPO_DIR/.git" ]; then
 fi
 cd "$REPO_DIR"
 
+echo "[SETUP] system tools (tmux, unzip) — not in NGC image by default"
+if ! command -v tmux >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
+  apt-get update -qq && apt-get install -y -qq tmux unzip
+fi
+
 echo "[SETUP] venv (inherits container torch via --system-site-packages) -> $VENV"
 if [ ! -f "$VENV/bin/activate" ]; then
   rm -rf "$VENV"   # drop any partial venv from a previous failed run
