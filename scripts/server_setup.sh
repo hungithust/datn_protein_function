@@ -27,11 +27,12 @@ fi
 cd "$REPO_DIR"
 
 echo "[SETUP] venv (inherits container torch via --system-site-packages) -> $VENV"
-if [ ! -d "$VENV/bin" ]; then
-  rm -rf "$VENV"
+if [ ! -f "$VENV/bin/activate" ]; then
+  rm -rf "$VENV"   # drop any partial venv from a previous failed run
   # NGC python often lacks ensurepip (no python3-venv). Try stdlib venv first,
   # fall back to virtualenv (bundles its own pip, no ensurepip needed).
-  if ! python -m venv --system-site-packages "$VENV" 2>/dev/null; then
+  python -m venv --system-site-packages "$VENV" 2>/dev/null || true
+  if [ ! -f "$VENV/bin/activate" ]; then
     echo "[SETUP] stdlib venv unavailable (no ensurepip) — using virtualenv"
     rm -rf "$VENV"
     pip install -q virtualenv
