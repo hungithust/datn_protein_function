@@ -20,19 +20,26 @@ pull () {  # $1 = dataset slug, $2 = subdir under _dl
   kaggle datasets download -d "$1" -p "$2" --unzip
 }
 
-# single-file download — for the big ones. Streams one file directly (no
-# server-side whole-archive prep that stalls on 50GB datasets) and skips any
-# junk files in the dataset. Unzips explicitly so progress is visible.
-# Idempotent: skips download if the final file already exists.
+# single-file download via curl — for the big ones. The kaggle CLI stalls
+# before the first byte on large files (mishandled storage redirect); curl
+# follows the 302 to Kaggle's pre-stored object and streams immediately with a
+# progress bar. Resumable (-C -). Endpoint returns a zip; we detect + extract.
+# Idempotent: skips if the final file already exists.
+KJSON="$KAGGLE_CONFIG_DIR/kaggle.json"
+KUSER="$(python -c "import json;print(json.load(open('$KJSON'))['username'])")"
+KKEY="$(python -c "import json;print(json.load(open('$KJSON'))['key'])")"
 pull_file () {  # $1 = slug, $2 = filename, $3 = subdir under _dl
-  echo "[PULL] $1 :: $2"
+  echo "[PULL] $1 :: $2 (curl)"
   mkdir -p "$3"
   if [ -f "$3/$2" ]; then echo "[PULL] $2 already present — skip"; return; fi
-  kaggle datasets download -d "$1" -f "$2" -p "$3"
-  if [ -f "$3/$2.zip" ]; then
-    echo "[PULL] unzip $2.zip"
-    unzip -o "$3/$2.zip" -d "$3"
-    rm -f "$3/$2.zip"
+  curl -fL -C - --progress-bar -u "$KUSER:$KKEY" \
+    -o "$3/$2.dl" \
+    "https://www.kaggle.com/api/v1/datasets/download/$1/$2"
+  if unzip -tq "$3/$2.dl" >/dev/null 2>&1; then
+    echo "[PULL] unzip $2"
+    unzip -o "$3/$2.dl" -d "$3" && rm -f "$3/$2.dl"
+  else
+    mv "$3/$2.dl" "$3/$2"   # not a zip — raw file
   fi
 }
 
