@@ -23,6 +23,16 @@ import numpy as np
 logger = logging.getLogger('precompute_esm2')
 
 
+def select_shard(ordered_ids, shard: int, nshards: int):
+    """Deterministic contiguous partition: shard i of nshards over ordered_ids."""
+    if nshards <= 1:
+        return list(ordered_ids)
+    n = len(ordered_ids)
+    lo = (n * shard) // nshards
+    hi = (n * (shard + 1)) // nshards
+    return list(ordered_ids[lo:hi])
+
+
 def write_residue_h5(iterator: Iterable[Tuple[str, np.ndarray]], out_path: str) -> None:
     """Append (protein_id, residue_emb) pairs to HDF5; skip existing keys."""
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
