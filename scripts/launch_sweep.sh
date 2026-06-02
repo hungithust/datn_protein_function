@@ -2,7 +2,7 @@
 # scripts/launch_sweep.sh — run all sweep configs, one GPU each (0-7).
 # Usage: bash scripts/launch_sweep.sh configs/sweep
 set -euo pipefail
-cd /raid/team/datn
+# Run from the current working directory (repo root). Do not hardcode a path.
 SWEEP_DIR="${1:-configs/sweep}"
 mapfile -t CFGS < <(ls "$SWEEP_DIR"/*.yaml | sort)
 n=${#CFGS[@]}
