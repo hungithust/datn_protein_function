@@ -24,6 +24,12 @@ import numpy as np
 import torch
 import yaml
 
+# Use file_system sharing strategy: the default 'file_descriptor' strategy keeps
+# one /dev/shm fd open per shared tensor, which exhausts shm file descriptors when
+# many DataLoader workers run concurrently (e.g. the 8-cell parallel sweep) and
+# crashes workers with a Bus error even when /dev/shm has free space.
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 from ampr.data.dataset import AMPRDataset
 from ampr.models.ampr import AMPRModel
 from ampr.training.trainer import Trainer
