@@ -56,11 +56,11 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, cfg in expand_grid(base, grid):
-        # 8 cells run concurrently on one node. Multiprocessing DataLoader workers
-        # exhaust shm file descriptors (Bus error) even with file_system sharing.
-        # Use 0 workers for the sweep: synchronous loading from precomputed h5 —
-        # slower per cell but rock-solid under 8-way concurrency.
-        set_dotted(cfg, 'training.num_workers', 0)
+        # 8 cells run concurrently. Parallel workers are needed for speed, but the
+        # default file_descriptor sharing exhausts shm fds (Bus error). main.py sets
+        # file_system sharing and launch_sweep.sh raises ulimit -n + TMPDIR=/dev/shm,
+        # which makes a moderate worker count safe across 8-way concurrency.
+        set_dotted(cfg, 'training.num_workers', 8)
         tag = f"{b}_{name}"
         cfg['output']['checkpoint_dir'] = f"checkpoints/sweep_{tag}/"
         cfg['output']['log_file'] = f"logs/sweep_{tag}.log"
