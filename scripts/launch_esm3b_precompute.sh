@@ -2,7 +2,9 @@
 # scripts/launch_esm3b_precompute.sh — ESM2-3B residue embeddings across GPUs 3-7.
 # Each shard writes its OWN HDF5 (no concurrent-writer corruption); merge after.
 set -euo pipefail
-cd /raid/team/datn
+# Derive repo dir from this script's location (scripts/ is one level under repo root).
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_DIR"
 FASTA=data/pdbch/nrPDB-GO_2019.06.18_sequences.fasta
 ORDER=data/pdbch/protein_order.json
 MODEL=facebook/esm2_t36_3B_UR50D
