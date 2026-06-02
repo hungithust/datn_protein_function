@@ -1,0 +1,57 @@
+branch: MF
+n_terms: 489
+data:
+  protein_order: data/pdbch/protein_order.json
+  splits: data/pdbch/splits.json
+  labels: data/pdbch/labels_mf.npy
+  dag_matrix: data/pdbch/dag_matrix_mf.npy
+  esm2_h5: data/embeddings/esm2_3b_residue.h5
+  ppi_emb: data/embeddings/ppi_deepgo.npy
+  ppi_mask: data/embeddings/ppi_deepgo_mask.npy
+  cmap_h5: data/contact_maps/cmap_all.h5
+  go_emb: data/embeddings/go_emb_mf_v2.npy
+  diamond_tsv: data/diamond/diamond_results_mf.tsv
+model:
+  version: v3
+  structure_modality: gnn
+  seq:
+    d_model: 2560
+    n_transformer_layers: 2
+    n_heads: 8
+    dropout: 0.1
+  gnn:
+    node_dim: 256
+    n_layers: 3
+    cmap_threshold: 10.0
+  ppi:
+    in_dim: 256
+    hidden: 512
+  fusion:
+    d_model: 512
+    n_layers: 2
+    n_heads: 8
+  classifier: both
+  d_hidden: 512
+training:
+  epochs: 50
+  batch_size: 64
+  lr: 0.001
+  loss_type: asl
+  asl_gamma_neg: 4
+  asl_gamma_pos: 0
+  asl_clip: 0.05
+  lambda_dag: 0.5
+  seed: 42
+  device: auto
+  max_seq_len: 1000
+  num_workers: 16
+inference:
+  use_dag_propagation: true
+  use_diamond_ensemble: true
+  diamond_alpha: 0.6
+  threshold_path: checkpoints/mf_v3_esm3b/threshold.json
+output:
+  checkpoint_dir: checkpoints/sweep_mf_both_h512_comb/
+  log_file: logs/sweep_mf_both_h512_comb.log
+  results_file: results/sweep_mf_both_h512_comb.tsv
+seed: 42
