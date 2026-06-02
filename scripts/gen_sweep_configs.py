@@ -56,6 +56,9 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, cfg in expand_grid(base, grid):
+        # 8 cells run concurrently on one node — 8*16 DataLoader workers would
+        # exhaust /dev/shm (Bus error). Cap workers per cell for the sweep.
+        set_dotted(cfg, 'training.num_workers', 4)
         tag = f"{b}_{name}"
         cfg['output']['checkpoint_dir'] = f"checkpoints/sweep_{tag}/"
         cfg['output']['log_file'] = f"logs/sweep_{tag}.log"
