@@ -63,15 +63,15 @@ def _load_fasta(path: str) -> dict:
 
 
 def _esm2_iterator(seqs: dict, ordered_ids: list, existing: set,
-                   batch: int, max_len: int):
-    """Yield (pid, residue_emb) by running ESM-2 in batches."""
+                   batch: int, max_len: int, model_name: str):
+    """Yield (pid, residue_emb) by running the given ESM-2 model in batches."""
     import torch
     from transformers import AutoTokenizer, EsmModel
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    logger.info(f"[ESM2] device={device}")
-    tok = AutoTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D")
-    model = EsmModel.from_pretrained("facebook/esm2_t33_650M_UR50D").to(device).eval()
+    logger.info(f"[ESM2] device={device} model={model_name}")
+    tok = AutoTokenizer.from_pretrained(model_name)
+    model = EsmModel.from_pretrained(model_name).to(device).eval()
 
     todo = [p for p in ordered_ids if p in seqs and p not in existing]
     logger.info(f"[ESM2] {len(todo)} proteins to embed ({len(existing)} already done)")
@@ -102,6 +102,10 @@ def main():
     ap.add_argument('--out', required=True)
     ap.add_argument('--batch', type=int, default=4)
     ap.add_argument('--max_len', type=int, default=1022)
+    ap.add_argument('--model', default='facebook/esm2_t33_650M_UR50D',
+                    help='HF model id, e.g. facebook/esm2_t36_3B_UR50D')
+    ap.add_argument('--shard', type=int, default=0)
+    ap.add_argument('--nshards', type=int, default=1)
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
@@ -109,14 +113,17 @@ def main():
     ordered = json.loads(Path(args.protein_order).read_text())
     if isinstance(ordered, dict):
         ordered = [k for k, _ in sorted(ordered.items(), key=lambda kv: kv[1])]
+    ordered = select_shard(ordered, args.shard, args.nshards)
+    logger.info(f"[ESM2] shard {args.shard}/{args.nshards} -> {len(ordered)} proteins")
 
     existing = set()
     if Path(args.out).exists():
         with h5py.File(args.out, 'r') as f:
             existing = set(f.keys())
 
-    write_residue_h5(_esm2_iterator(seqs, ordered, existing, args.batch, args.max_len),
-                     args.out)
+    write_residue_h5(
+        _esm2_iterator(seqs, ordered, existing, args.batch, args.max_len, args.model),
+        args.out)
     with h5py.File(args.out, 'r') as f:
         logger.info(f"[ESM2] DONE — {len(f.keys())} proteins in {args.out}")
 
