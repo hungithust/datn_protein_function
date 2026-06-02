@@ -213,6 +213,11 @@ class AMPRModelV3(nn.Module):
             )
         if classifier in ('biobert', 'both'):
             self.go_emb_proj = nn.Linear(d_hidden, go_emb_dim)
+        if classifier == 'label_attn':
+            from ampr.models.label_attention import LabelAttentionHead
+            self.label_head = LabelAttentionHead(
+                d_hidden=d_hidden, go_emb_dim=go_emb_dim, n_terms=n_terms,
+                n_heads=fusion_n_heads, dropout=dropout)
 
         logger.info(f"[MODEL] AMPRModelV3 n_terms={n_terms} d_hidden={d_hidden} "
                     f"seq={seq_n_layers}L gnn={gnn_n_layers}L fusion={fusion_n_layers}L "
@@ -243,6 +248,9 @@ class AMPRModelV3(nn.Module):
         z = self.fusion(h_seq, h_gnn, h_ppi, ppi_mask)
 
         # Head(s)
+        if self.classifier_type == 'label_attn':
+            assert go_emb is not None, "label_attn head requires go_emb"
+            return self.label_head(z, go_emb)
         if self.classifier_type == 'linear':
             return self.linear_head(z)
         if self.classifier_type == 'biobert':
