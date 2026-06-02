@@ -69,10 +69,18 @@ def main():
         check("ESM-2 residue dim==cfg seq.d_model", seq_dim == seq_dim_cfg, f"{seq_dim} vs {seq_dim_cfg}")
         for k in ('train', 'valid'):
             ids = splits.get(k, [])
+            # ESM-2 is the backbone modality — every protein MUST have it.
             check(f"'{k}' all have ESM-2", all(p in ek for p in ids),
                   f"missing={sum(p not in ek for p in ids)}")
-            check(f"'{k}' all have cmap", all(p in ck for p in ids),
-                  f"missing={sum(p not in ck for p in ids)}")
+            # cmap is the (optional) structure modality. The V3 dataset filters
+            # splits to esm ∩ cmap (dataset.py), so proteins without a predicted
+            # contact map are dropped, not fatal. Gate only on the drop fraction.
+            n = max(len(ids), 1)
+            miss_cmap = sum(p not in ck for p in ids)
+            eff = sum((p in ek and p in ck) for p in ids)
+            check(f"'{k}' cmap drop <1% (effective N={eff})",
+                  miss_cmap / n < 0.01,
+                  f"missing={miss_cmap}/{len(ids)} ({100*miss_cmap/n:.3f}%)")
 
     L = labels.astype(np.float32)
     viol_a = float(((L @ dag) * (1 - L)).sum())     # dag[child,parent] (matches loss.py)
