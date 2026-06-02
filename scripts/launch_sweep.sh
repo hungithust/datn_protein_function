@@ -2,7 +2,10 @@
 # scripts/launch_sweep.sh — run all sweep configs, one GPU each (0-7).
 # Usage: bash scripts/launch_sweep.sh configs/sweep
 set -euo pipefail
-# Run from the current working directory (repo root). Do not hardcode a path.
+# Run from the current working directory (repo root). Do not hardcode a path —
+# capture it so each tmux session cd's back here (tmux does not reliably inherit
+# the caller's cwd, which made relative data paths like data/embeddings/*.npy fail).
+ROOT="$(pwd)"
 SWEEP_DIR="${1:-configs/sweep}"
 # file_system mp sharing (set in main.py) writes shared tensors under $TMPDIR.
 # The container's /dev/shm is capped at 16G — too small for 8 cells x 8 workers
@@ -22,7 +25,7 @@ for cfg in "${CFGS[@]}"; do
   # lets DataLoader workers run concurrently across 8 cells without exhausting
   # shm file descriptors (Bus error) or the open-file limit (Too many open files).
   tmux new-session -d -s "$sess" \
-    "ulimit -n 1048576; export TMPDIR='$SHARE_TMP'; CUDA_VISIBLE_DEVICES=$gpu python main.py --config $cfg 2>&1 | tee logs/${base}.run.log"
+    "cd '$ROOT'; ulimit -n 1048576; export TMPDIR='$SHARE_TMP'; CUDA_VISIBLE_DEVICES=$gpu python main.py --config $cfg 2>&1 | tee logs/${base}.run.log"
   echo "[SWEEP] $base -> GPU $gpu"
   gpu=$(( (gpu + 1) % 8 ))
 done
