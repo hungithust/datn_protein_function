@@ -174,6 +174,18 @@ def _run_v3(config: dict, args, log):
     optimizer = torch.optim.Adam(model.parameters(), lr=train_cfg.get('lr', 1e-3))
     grad_clip = float(train_cfg.get('grad_clip', 0.0))  # 0 = off
 
+    # Gentle LR scheduler: only acts when val Fmax_dag plateaus (no-op while it keeps
+    # improving). Config-gated; 'none' preserves the fixed-LR behavior.
+    scheduler = None
+    if train_cfg.get('lr_scheduler', 'none') == 'plateau':
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='max',
+            factor=float(train_cfg.get('lr_factor', 0.5)),
+            patience=int(train_cfg.get('lr_patience', 5)),
+            min_lr=float(train_cfg.get('lr_min', 1e-5)))
+        log.info(f"[V3] LR scheduler: ReduceLROnPlateau(max, factor={scheduler.factor}, "
+                 f"patience={scheduler.patience}, min_lr={train_cfg.get('lr_min', 1e-5)})")
+
     ckpt_dir = Path(out_cfg['checkpoint_dir'])
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -215,6 +227,13 @@ def _run_v3(config: dict, args, log):
 
         log.info(f"[V3] Epoch {epoch}/{epochs}: loss={train_loss:.4f} "
                  f"val_Fmax_raw={fmax_raw:.4f} val_Fmax_dag={fmax_dag:.4f}")
+
+        if scheduler is not None:
+            prev_lr = optimizer.param_groups[0]['lr']
+            scheduler.step(fmax_dag)
+            new_lr = optimizer.param_groups[0]['lr']
+            if new_lr != prev_lr:
+                log.info(f"[V3] LR reduced {prev_lr:.2e} -> {new_lr:.2e}")
 
         if fmax_dag > best_fmax_dag:
             best_fmax_dag = fmax_dag
