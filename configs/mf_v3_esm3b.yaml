@@ -24,6 +24,10 @@ training:
   epochs: 50
   batch_size: 64          # 2560d residue is ~2x memory of 1280d; 64 safe on H200
   lr: 1.0e-3
+  lr_scheduler: plateau     # gentle: halve LR when val Fmax_dag plateaus
+  lr_factor: 0.5
+  lr_patience: 5
+  lr_min: 1.0e-5
   loss_type: asl
   asl_gamma_neg: 4
   asl_gamma_pos: 0
