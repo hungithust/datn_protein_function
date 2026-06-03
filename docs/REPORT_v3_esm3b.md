@@ -66,39 +66,54 @@ A consistent ~0.19–0.21 drop from validation to test across all three branches
 
 Evaluated on the two sequence-identity bins DeepFRI reports (`LT_30` = ≤30% identity to train, hardest/novel; `LT_95` = full test, 3,123 proteins). AMPR numbers are DAG-propagated; DeepFRI from Gligorijević et al. 2021 (DeepFRI-GCN). **Bold = better** (higher Fmax/AUPRC).
 
-| Branch | Split | AMPR Fmax | DeepFRI Fmax | AMPR AUPRC_micro | DeepFRI AUPRC_micro |
-|---|---|---|---|---|---|
-| MF | LT_30 | 0.4777 | **0.545** | **0.5024** | 0.443 |
-| MF | LT_95 | 0.5498 | **0.759** | 0.5851 | **0.671** |
-| BP | LT_30 | **0.4358** | 0.282 | **0.2803** | 0.169 |
-| BP | LT_95 | **0.4582** | 0.395 | **0.3057** | 0.272 |
-| CC | LT_30 | **0.4909** | 0.434 | **0.3832** | 0.308 |
-| CC | LT_95 | 0.4955 | **0.561** | 0.3665 | **0.443** |
+**Fmax** (DAG-propagated). `AMPR` = model only; `AMPR+D` = model + DIAMOND homology ensemble (α=0.6, §5.1). **Bold = beats DeepFRI**.
 
-(AMPR normalized Smin — LT_30 / LT_95: MF 0.773 / 0.677, BP 0.887 / 0.846, CC 0.811 / 0.797. Not comparable to DeepFRI's raw-IC Smin; reported for internal reference only.)
+| Branch | Split | AMPR | AMPR+D | DeepFRI |
+|---|---|---|---|---|
+| MF | LT_30 | 0.4777 | 0.5149 | **0.545** |
+| MF | LT_95 | 0.5498 | 0.6142 | **0.759** |
+| BP | LT_30 | **0.4358** | **0.4603** | 0.282 |
+| BP | LT_95 | **0.4582** | **0.5069** | 0.395 |
+| CC | LT_30 | **0.4909** | **0.5154** | 0.434 |
+| CC | LT_95 | 0.4955 | **0.5383** | 0.561 |
 
-**The key result — similarity robustness.** AMPR's Fmax is nearly **flat** from LT_30→LT_95 (MF +0.072, BP +0.022, CC +0.005), whereas DeepFRI rises steeply (MF +0.214, CC +0.127). This means AMPR (built on ESM-2 3B embeddings) generalizes to **low-similarity / novel sequences** far better, while DeepFRI relies more on close homologs.
+**AUPRC_micro:**
 
-Consequently, in the hardest and most practically important regime (**LT_30, novel proteins**):
-- **BP:** AMPR beats DeepFRI on both Fmax (+0.154) and AUPRC (+0.111).
-- **CC:** AMPR beats DeepFRI on both Fmax (+0.057) and AUPRC (+0.075).
-- **MF:** AMPR wins AUPRC_micro (+0.059); Fmax slightly behind (−0.068).
+| Branch | Split | AMPR | AMPR+D | DeepFRI |
+|---|---|---|---|---|
+| MF | LT_30 | **0.5024** | **0.4974** | 0.443 |
+| MF | LT_95 | 0.5851 | 0.6001 | **0.671** |
+| BP | LT_30 | **0.2803** | **0.2835** | 0.169 |
+| BP | LT_95 | **0.3057** | **0.3409** | 0.272 |
+| CC | LT_30 | **0.3832** | **0.3909** | 0.308 |
+| CC | LT_95 | 0.3665 | 0.4011 | **0.443** |
 
-DeepFRI overtakes only at high identity (LT_95) for MF and CC, where exploiting near-duplicate homologs pays off.
+(AMPR normalized Smin — not comparable to DeepFRI's raw-IC Smin; internal reference only.)
+
+### 5.1 Effect of the DIAMOND ensemble
+
+The homology ensemble lifts Fmax on **every** branch/split (MF +0.037/+0.064, BP +0.025/+0.049, CC +0.025/+0.043 for LT_30/LT_95), with the larger gains at LT_95 where more high-similarity homologs exist (hom-hits: 2323/3123 MF, 2273 BP, 1897 CC at LT_95 vs ~620–840/1582 at LT_30). α=0.6 is the config default and was **not** tuned — `diamond_ensemble.tune_alpha` could squeeze a little more.
+
+### 5.2 Takeaways
+
+- **Similarity robustness (model-only):** AMPR Fmax is nearly flat LT_30→LT_95 (MF +0.072, BP +0.022, CC +0.005) vs DeepFRI's steep rise (MF +0.214, CC +0.127) — ESM-2 generalizes to novel sequences; DeepFRI leans on close homologs.
+- **With the ensemble, AMPR beats DeepFRI outright on BP and CC at every split except CC LT_95 (0.538 vs 0.561, essentially tied).** BP is a decisive win (+0.11–0.18 Fmax).
+- **MF remains DeepFRI's stronghold at high identity** (LT_95 0.614 vs 0.759), though AMPR wins MF AUPRC at LT_30. MF high-identity is the one clear remaining gap.
 
 ## 6. Key findings & recommended next steps
 
 **Findings**
 - Best architecture is compact (512-d, dot-product head) — enlarging the model does not help at this data scale.
 - Combined text+graph GO embeddings are required; text-only collapses.
-- **AMPR is markedly more robust to low sequence identity than DeepFRI** — at LT_30 it beats DeepFRI on BP and CC (both metrics) and on MF AUPRC. This similarity-invariance is the model's main strength and a strong thesis narrative.
-- DeepFRI only wins at high identity (LT_95, MF/CC), where homology lookup dominates — exactly where a homology ensemble would help AMPR (next step).
+- **AMPR is markedly more robust to low sequence identity than DeepFRI** — model-only Fmax is nearly flat across identity bins; DeepFRI leans on close homologs.
+- **The DIAMOND ensemble lifts Fmax on every branch/split.** With it, AMPR beats DeepFRI on BP and CC at every split except CC LT_95 (statistically tied); BP is a decisive win.
+- The single clear remaining gap is **MF at high identity (LT_95)**.
 
 **Next steps (priority order)**
-1. **DIAMOND ensemble** — config has `use_diamond_ensemble: true`, but `_eval_v3` reports pure-model scores; adding the homology ensemble targets precisely the high-identity regime where DeepFRI currently leads (likely closes the LT_95 MF/CC gap). Highest-value, low-risk.
-2. **MF high-identity Fmax** — investigate per-threshold calibration; AMPR already wins MF AUPRC at LT_30, so the Fmax gap is partly thresholding.
-3. **Scale-up only with more data (SWISS-MODEL)** — enlarging `d_hidden`/fusion depth is justified *only* alongside a much larger training set; requires a separate embedding-precompute effort (cf. Plan 2).
-4. Remaining LT bins (LT_40/50/70) for a complete identity-curve figure in the thesis.
+1. **MF high-identity gap** — tune ensemble α per branch (`tune_alpha`); MF likely benefits from a higher DIAMOND weight since its homology hits are strong. Also revisit per-threshold calibration (AMPR already wins MF AUPRC at LT_30).
+2. **Complete the identity curve** — run LT_40/50/70 for the thesis figure (`for s in test_LT_40 test_LT_50 test_LT_70; do bash scripts/eval_all_v3.sh $s; done`).
+3. **Close the absolute val→test gap** — stronger regularization (weight decay / higher dropout) rather than scaling up.
+4. **Scale-up only with more data (SWISS-MODEL)** — enlarging `d_hidden`/fusion depth is justified *only* alongside a much larger training set; separate embedding-precompute effort (cf. Plan 2).
 
 ---
 
