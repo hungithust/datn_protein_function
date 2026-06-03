@@ -337,12 +337,39 @@ def _eval_v3(config: dict, args, log):
                  f"AUPRC_micro={m['auprc_micro']:.4f} AUPRC_macro={m['auprc_macro']:.4f} "
                  f"AUROC_micro={m['micro_auroc']:.4f} coverage={m['coverage']:.4f}")
 
+    out = {'split': split, 'checkpoint': ckpt_path,
+           'n_proteins': int(labels.shape[0]), 'raw': m_raw, 'dag': m_dag}
+
+    # DIAMOND homology ensemble (DeepGOPlus-style): blend model probs with
+    # similarity-weighted train-label transfer, then DAG-propagate.
+    inf_cfg = config.get('inference', {})
+    diamond_tsv = data_cfg.get('diamond_tsv')
+    if inf_cfg.get('use_diamond_ensemble', False) and diamond_tsv and Path(diamond_tsv).exists():
+        from ampr.evaluation.diamond_ensemble import (compute_diamond_scores,
+                                                      ensemble_scores)
+        with open(data_cfg['splits']) as f:
+            train_ids = json.load(f).get('train', [])
+        train_order = {p: ds._prot2idx[p] for p in train_ids if p in ds._prot2idx}
+        alpha = float(inf_cfg.get('diamond_alpha', 0.6))
+        diamond_probs = compute_diamond_scores(
+            diamond_tsv, ds.labels, train_order, ds.protein_ids, config['n_terms'])
+        n_hom = int((diamond_probs.sum(axis=1) > 0).sum())
+        ens = ensemble_scores(probs, diamond_probs, alpha)
+        ens_dag = propagate_scores_upward(ens, dag_np)
+        m_ens = compute_all_metrics(labels, ens_dag, term_ic)
+        log.info(f"[V3-EVAL][ens] alpha={alpha} hom_hits={n_hom}/{labels.shape[0]} "
+                 f"Fmax={m_ens['fmax']:.4f} Smin={m_ens['smin']:.4f} "
+                 f"AUPRC_micro={m_ens['auprc_micro']:.4f} AUROC_micro={m_ens['micro_auroc']:.4f}")
+        out['ensemble'] = m_ens
+        out['ensemble_alpha'] = alpha
+        out['ensemble_hom_hits'] = n_hom
+    elif inf_cfg.get('use_diamond_ensemble', False):
+        log.info(f"[V3-EVAL] diamond ensemble requested but tsv missing: {diamond_tsv}")
+
     results_path = Path(out_cfg['results_file']).with_suffix(f'.eval_{split}.json')
     results_path.parent.mkdir(parents=True, exist_ok=True)
     with open(results_path, 'w') as f:
-        json.dump({'split': split, 'checkpoint': ckpt_path,
-                   'n_proteins': int(labels.shape[0]),
-                   'raw': m_raw, 'dag': m_dag}, f, indent=2)
+        json.dump(out, f, indent=2)
     log.info(f"[V3-EVAL] wrote {results_path}")
 
 
