@@ -246,6 +246,106 @@ def _run_v3(config: dict, args, log):
     log.info(f"[V3] Training complete. Best val Fmax (DAG): {best_fmax_dag:.4f}")
 
 
+def _eval_v3(config: dict, args, log):
+    """V3 eval-only: load checkpoint, score a test split, report CAFA metrics."""
+    import json
+
+    from torch.utils.data import DataLoader
+
+    from ampr.data.dataset import AMPRDatasetV3, collate_variable_length
+    from ampr.models.ampr import AMPRModelV3
+    from ampr.evaluation.dag_inference import propagate_scores_upward
+    from ampr.evaluation.metrics import compute_all_metrics
+
+    data_cfg = config['data']
+    model_cfg = config['model']
+    train_cfg = config['training']
+    out_cfg = config['output']
+
+    device = _resolve_device(train_cfg.get('device', 'auto'))
+    split = args.test_split
+    log.info(f"[V3-EVAL] device={device} split={split}")
+
+    ds = AMPRDatasetV3(
+        esm2_h5=data_cfg['esm2_h5'], ppi_emb=data_cfg['ppi_emb'],
+        ppi_mask=data_cfg['ppi_mask'], cmap_h5=data_cfg['cmap_h5'],
+        labels=data_cfg['labels'], dag_matrix=data_cfg['dag_matrix'],
+        go_emb=data_cfg['go_emb'], splits=data_cfg['splits'],
+        protein_order=data_cfg['protein_order'], branch=config['branch'],
+        split=split, max_len=train_cfg.get('max_seq_len', 1000),
+    )
+    log.info(f"[V3-EVAL] {split} set: {len(ds)} proteins")
+
+    loader = DataLoader(ds, batch_size=train_cfg['batch_size'], shuffle=False,
+                        collate_fn=collate_variable_length,
+                        num_workers=train_cfg.get('num_workers', 0),
+                        pin_memory=(device == 'cuda'))
+
+    go_emb = ds.go_emb.to(device)
+    go_emb_dim = go_emb.shape[1]
+
+    seq_cfg = model_cfg.get('seq', {})
+    gnn_cfg = model_cfg.get('gnn', {})
+    ppi_cfg = model_cfg.get('ppi', {})
+    fusion_cfg = model_cfg.get('fusion', {})
+    model = AMPRModelV3(
+        n_terms=config['n_terms'],
+        seq_dim=seq_cfg.get('d_model', 1280),
+        seq_n_heads=seq_cfg.get('n_heads', 8),
+        seq_n_layers=seq_cfg.get('n_transformer_layers', 2),
+        gnn_node_dim=gnn_cfg.get('node_dim', 256),
+        gnn_n_layers=gnn_cfg.get('n_layers', 3),
+        ppi_dim=ppi_cfg.get('in_dim', 256),
+        d_hidden=model_cfg.get('d_hidden', 512),
+        fusion_n_heads=fusion_cfg.get('n_heads', 8),
+        fusion_n_layers=fusion_cfg.get('n_layers', 2),
+        classifier=model_cfg.get('classifier', 'both'),
+        go_emb_dim=go_emb_dim,
+        cmap_threshold=gnn_cfg.get('cmap_threshold', 10.0),
+        dropout=seq_cfg.get('dropout', 0.1),
+    ).to(device)
+
+    ckpt_path = args.checkpoint or str(Path(out_cfg['checkpoint_dir']) / 'best.pt')
+    ckpt = torch.load(ckpt_path, map_location=device)
+    model.load_state_dict(ckpt['model'])
+    model.eval()
+    log.info(f"[V3-EVAL] loaded checkpoint {ckpt_path} "
+             f"(trained epoch={ckpt.get('epoch')}, val_fmax_dag={ckpt.get('fmax_dag')})")
+
+    probs_list, labels_list = [], []
+    with torch.no_grad():
+        for batch in loader:
+            batch_dev = {k: (v.to(device) if torch.is_tensor(v) else v)
+                         for k, v in batch.items()}
+            logits = model(batch_dev, go_emb=go_emb)
+            probs_list.append(torch.sigmoid(logits).cpu().numpy())
+            labels_list.append(batch['labels'].numpy())
+
+    probs = np.concatenate(probs_list)
+    labels = np.concatenate(labels_list)
+    dag_np = ds.dag_matrix.numpy()
+    probs_dag = propagate_scores_upward(probs, dag_np)
+
+    # Term IC = -log2(freq) from full label matrix (matches Trainer/baselines).
+    labels_all = np.load(data_cfg['labels'])
+    term_ic = (-np.log2(labels_all.mean(axis=0).clip(1e-7, 1.0))).astype('float32')
+
+    m_raw = compute_all_metrics(labels, probs, term_ic)
+    m_dag = compute_all_metrics(labels, probs_dag, term_ic)
+    for tag, m in (('raw', m_raw), ('dag', m_dag)):
+        log.info(f"[V3-EVAL][{tag}] Fmax={m['fmax']:.4f} Smin={m['smin']:.4f} "
+                 f"AUPRC_micro={m['auprc_micro']:.4f} AUPRC_macro={m['auprc_macro']:.4f} "
+                 f"AUROC_micro={m['micro_auroc']:.4f} coverage={m['coverage']:.4f}")
+
+    results_path = Path(out_cfg['results_file']).with_suffix(f'.eval_{split}.json')
+    results_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(results_path, 'w') as f:
+        json.dump({'split': split, 'checkpoint': ckpt_path,
+                   'n_proteins': int(labels.shape[0]),
+                   'raw': m_raw, 'dag': m_dag}, f, indent=2)
+    log.info(f"[V3-EVAL] wrote {results_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description='AMPR training / evaluation')
     parser.add_argument('--config', type=str, required=True)
@@ -275,7 +375,10 @@ def main():
     is_v3 = (model_version == 'v3') or ('esm2_h5' in config.get('data', {}))
     if is_v3:
         log.info("[V3] Detected v3 config — using AMPRModelV3 pipeline")
-        _run_v3(config, args, log)
+        if args.eval_only:
+            _eval_v3(config, args, log)
+        else:
+            _run_v3(config, args, log)
         return
 
     # --- V1/V2 legacy path ---
