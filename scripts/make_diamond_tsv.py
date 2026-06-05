@@ -55,7 +55,8 @@ def main():
     ap.add_argument('--splits', required=True)
     ap.add_argument('--out_dir', default='data/diamond')
     ap.add_argument('--train_split', default='train')
-    ap.add_argument('--query_split', default='test')
+    ap.add_argument('--query_splits', nargs='+', default=['valid', 'test'],
+                    help='splits to use as queries (valid needed for alpha tuning)')
     ap.add_argument('--branches', nargs='+', default=['mf', 'bp', 'cc'])
     ap.add_argument('--diamond_bin', default='diamond')
     ap.add_argument('--threads', type=int, default=16)
@@ -64,7 +65,12 @@ def main():
     seqs = read_fasta(args.fasta)
     splits = json.load(open(args.splits))
     train_ids = splits[args.train_split]
-    query_ids = splits[args.query_split]
+    query_ids, seen = [], set()
+    for s in args.query_splits:
+        for p in splits.get(s, []):
+            if p not in seen:
+                seen.add(p)
+                query_ids.append(p)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
