@@ -171,7 +171,10 @@ def _run_v3(config: dict, args, log):
     )
     loss_fn = loss_fn.to(device)  # move dag_matrix + pos_weight buffers to GPU
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=train_cfg.get('lr', 1e-3))
+    weight_decay = float(train_cfg.get('weight_decay', 0.0))
+    optimizer = torch.optim.AdamW(model.parameters(), lr=train_cfg.get('lr', 1e-3),
+                                  weight_decay=weight_decay)
+    log.info(f"[V3] optimizer=AdamW lr={train_cfg.get('lr', 1e-3)} weight_decay={weight_decay}")
     grad_clip = float(train_cfg.get('grad_clip', 0.0))  # 0 = off
 
     # Gentle LR scheduler: only acts when val Fmax_dag plateaus (no-op while it keeps

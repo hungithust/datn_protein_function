@@ -92,7 +92,9 @@ Evaluated on the two sequence-identity bins DeepFRI reports (`LT_30` = ≤30% id
 
 ### 5.1 Effect of the DIAMOND ensemble
 
-The homology ensemble lifts Fmax on **every** branch/split (MF +0.037/+0.064, BP +0.025/+0.049, CC +0.025/+0.043 for LT_30/LT_95), with the larger gains at LT_95 where more high-similarity homologs exist (hom-hits: 2323/3123 MF, 2273 BP, 1897 CC at LT_95 vs ~620–840/1582 at LT_30). α=0.6 is the config default and was **not** tuned — `diamond_ensemble.tune_alpha` could squeeze a little more.
+The homology ensemble lifts Fmax on **every** branch/split (MF +0.037/+0.064, BP +0.025/+0.049, CC +0.025/+0.043 for LT_30/LT_95), with the larger gains at LT_95 where more high-similarity homologs exist (hom-hits: 2323/3123 MF, 2273 BP, 1897 CC at LT_95 vs ~620–840/1582 at LT_30).
+
+**Per-branch α tuning (negative result).** Tuning α on the validation split (`--tune-alpha`, sweep 0.3–0.9) selected **α=0.6 for all three branches** — identical to the default — so test metrics are unchanged. The validation split is high-similarity to train, where both the model and DIAMOND are strong and the optimal blend coincides with 0.6; this optimum does not necessarily transfer to the harder low-identity test bins. Conclusion: **α=0.6 is robust; per-branch tuning on the standard valid split yields no gain.** (Bin-specific tuning would need a tune/eval split matched to each LT bin's identity distribution.)
 
 ### 5.2 Takeaways
 
