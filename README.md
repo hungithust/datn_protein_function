@@ -3,8 +3,56 @@
 Deep learning-based protein function prediction with Adaptive Multimodal Representation.
 
 **Thesis:** Dự đoán chức năng protein dựa trên Deep Learning  
-**Student:** Nguyen Viet Hung (20224998)  
-**Execution:** Google Colab (T4 GPU) or Kaggle (2x T4)
+**Student:** Nguyen Viet Hung (20224998)
+
+AMPR predicts Gene Ontology (GO) terms for proteins by fusing three modalities —
+**ESM-2 3B** sequence embeddings, a **contact-map GNN** (structure), and **PPI**
+embeddings — with adaptive gating, then enforces the GO hierarchy (True Path Rule).
+Separate models for the three GO branches: **MF**, **BP**, **CC**.
+
+## Results (held-out test, with DIAMOND homology ensemble)
+
+| Branch | Fmax (LT_30, novel) | Fmax (LT_95, full test) | vs DeepFRI |
+|---|---|---|---|
+| MF | 0.515 | 0.614 | competitive |
+| BP | **0.460** | **0.507** | **beats DeepFRI** (+0.11–0.18) |
+| CC | **0.515** | 0.538 | beats at LT_30, ~tied at LT_95 |
+
+AMPR is notably **robust to low sequence identity** (Fmax stays nearly flat from
+high- to low-similarity proteins). Full analysis: [docs/REPORT_v3_esm3b.md](docs/REPORT_v3_esm3b.md).
+
+## Inference — predict GO terms for your own proteins
+
+Full-modality inference needs, per protein, a **sequence** (FASTA) and a **structure**
+(a PDB file at `<pdb_dir>/<protein_id>.pdb`; AlphaFold models work). ESM-2 3B requires a GPU.
+
+```bash
+pip install -r requirements.txt          # torch, transformers, h5py, biopython, pyyaml
+
+# 1. put sequences in proteins.fasta and structures in pdbs/<id>.pdb
+# 2. download a trained checkpoint into checkpoints/<branch>_v3_esm3b/best.pt
+#    (see Releases / Google Drive link), then:
+
+python scripts/predict.py --branch mf \
+  --fasta proteins.fasta --pdb_dir pdbs/ \
+  --out predictions_mf.tsv --threshold 0.3
+```
+
+Output `predictions_mf.tsv`:
+
+```
+protein_id    go_term     score
+P12345        GO:0016787  0.91
+P12345        GO:0003824  0.88
+...
+```
+
+- `--branch {mf,bp,cc}` — which GO sub-ontology to predict.
+- `--threshold 0.3` — keep terms above this score; or `--topk 20` for the top-k per protein.
+- PPI is unavailable for novel proteins, so that modality is masked off automatically.
+- Scores are DAG-propagated (parent terms ≥ child terms).
+
+A runnable walkthrough is in [notebooks/inference_demo.ipynb](notebooks/inference_demo.ipynb).
 
 ## Quick Start
 

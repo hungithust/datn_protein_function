@@ -14,7 +14,7 @@ data:
 model:
   version: v3
   structure_modality: gnn
-  seq: {d_model: 2560, n_transformer_layers: 2, n_heads: 8, dropout: 0.1}  # NEW d_model
+  seq: {d_model: 2560, n_transformer_layers: 2, n_heads: 8, dropout: 0.2}  # dropout 0.2: reg sweep winner (MF only)
   gnn: {node_dim: 256, n_layers: 3, cmap_threshold: 10.0}
   ppi: {in_dim: 256, hidden: 512}
   fusion: {d_model: 512, n_layers: 2, n_heads: 8}
@@ -28,6 +28,7 @@ training:
   lr_factor: 0.5
   lr_patience: 5
   lr_min: 1.0e-5
+  weight_decay: 1.0e-2      # AdamW: reg sweep winner for MF (val 0.745->0.760)
   loss_type: asl
   asl_gamma_neg: 4
   asl_gamma_pos: 0
