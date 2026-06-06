@@ -81,31 +81,26 @@ In all cases the val→test gap stays ~0.19–0.21, confirming it is **largely i
 
 **Final configs:** MF uses `wd=1e-2, dropout=0.2`; BP and CC keep the baseline (`wd=0, dropout=0.1`).
 
-## 5. Comparison to DeepFRI baseline (LT_30 / LT_95)
+## 5. Comparison to DeepFRI baseline (full identity curve LT_30 → LT_95)
 
-Evaluated on the two sequence-identity bins DeepFRI reports (`LT_30` = ≤30% identity to train, hardest/novel; `LT_95` = full test, 3,123 proteins). AMPR numbers are DAG-propagated; DeepFRI from Gligorijević et al. 2021 (DeepFRI-GCN). **Bold = better** (higher Fmax/AUPRC).
+Evaluated on all five sequence-identity bins DeepFRI reports (`LT_30` = ≤30% identity to train, hardest/novel … `LT_95` = full test, 3,123 proteins). AMPR is DAG-propagated; `AMPR+D` = + DIAMOND homology ensemble (α=0.6, §5.1); DeepFRI = DeepFRI-GCN (Gligorijević et al. 2021). **Bold = AMPR+D beats DeepFRI.** Full per-bin metrics in [RESULTS_DATA.md](RESULTS_DATA.md).
 
-**Fmax** (DAG-propagated). `AMPR` = model only; `AMPR+D` = model + DIAMOND homology ensemble (α=0.6, §5.1). **Bold = beats DeepFRI**.
+**Fmax across the identity curve:**
 
-| Branch | Split | AMPR | AMPR+D | DeepFRI |
-|---|---|---|---|---|
-| MF | LT_30 | 0.4777 | 0.5149 | **0.545** |
-| MF | LT_95 | 0.5498 | 0.6142 | **0.759** |
-| BP | LT_30 | **0.4358** | **0.4603** | 0.282 |
-| BP | LT_95 | **0.4582** | **0.5069** | 0.395 |
-| CC | LT_30 | **0.4909** | **0.5154** | 0.434 |
-| CC | LT_95 | 0.4955 | **0.5383** | 0.561 |
+| Branch | LT_30 | LT_40 | LT_50 | LT_70 | LT_95 |
+|---|---|---|---|---|---|
+| MF AMPR+D | 0.515 | 0.525 | 0.550 | 0.584 | 0.614 |
+| MF DeepFRI | 0.545 | 0.587 | 0.626 | 0.717 | 0.759 |
+| BP AMPR+D | **0.460** | **0.462** | **0.470** | **0.487** | **0.507** |
+| BP DeepFRI | 0.282 | 0.302 | 0.327 | 0.365 | 0.395 |
+| CC AMPR+D | **0.515** | **0.516** | **0.522** | 0.524 | 0.538 |
+| CC DeepFRI | 0.434 | 0.462 | 0.493 | 0.541 | 0.561 |
 
-**AUPRC_micro:**
+**Slope LT_30→LT_95 (robustness):** AMPR+D rises only MF +0.099 / BP +0.047 / CC +0.023, versus DeepFRI MF +0.214 / BP +0.113 / CC +0.127 — AMPR is far flatter, i.e. **robust to low sequence identity**.
 
-| Branch | Split | AMPR | AMPR+D | DeepFRI |
-|---|---|---|---|---|
-| MF | LT_30 | **0.5024** | **0.4974** | 0.443 |
-| MF | LT_95 | 0.5851 | 0.6001 | **0.671** |
-| BP | LT_30 | **0.2803** | **0.2835** | 0.169 |
-| BP | LT_95 | **0.3057** | **0.3409** | 0.272 |
-| CC | LT_30 | **0.3832** | **0.3909** | 0.308 |
-| CC | LT_95 | 0.3665 | 0.4011 | **0.443** |
+- **BP: AMPR+D beats DeepFRI at all 5 bins** (+0.11 to +0.18 Fmax).
+- **CC: AMPR+D wins LT_30/40/50, loses LT_70/95** (close: 0.524 vs 0.541, 0.538 vs 0.561).
+- **MF: DeepFRI leads on Fmax at every bin**, the steeply identity-dependent regime; AMPR still **wins MF AUPRC_micro at LT_30** (0.502 vs 0.443).
 
 (AMPR normalized Smin — not comparable to DeepFRI's raw-IC Smin; internal reference only.)
 
@@ -118,8 +113,8 @@ The homology ensemble lifts Fmax on **every** branch/split (MF +0.037/+0.064, BP
 ### 5.2 Takeaways
 
 - **Similarity robustness (model-only):** AMPR Fmax is nearly flat LT_30→LT_95 (MF +0.072, BP +0.022, CC +0.005) vs DeepFRI's steep rise (MF +0.214, CC +0.127) — ESM-2 generalizes to novel sequences; DeepFRI leans on close homologs.
-- **With the ensemble, AMPR beats DeepFRI outright on BP and CC at every split except CC LT_95 (0.538 vs 0.561, essentially tied).** BP is a decisive win (+0.11–0.18 Fmax).
-- **MF remains DeepFRI's stronghold at high identity** (LT_95 0.614 vs 0.759), though AMPR wins MF AUPRC at LT_30. MF high-identity is the one clear remaining gap.
+- **With the ensemble, AMPR beats DeepFRI on all 5 BP bins** (+0.11–0.18 Fmax) and on **CC at LT_30/40/50** (loses CC LT_70/95, close). 
+- **MF remains DeepFRI's stronghold** — DeepFRI leads MF Fmax at every bin (LT_95 0.614 vs 0.759), though AMPR wins MF AUPRC at LT_30. MF high-identity is the clearest remaining gap.
 
 ## 6. Key findings & recommended next steps
 
@@ -127,8 +122,8 @@ The homology ensemble lifts Fmax on **every** branch/split (MF +0.037/+0.064, BP
 - Best architecture is compact (512-d, dot-product head) — enlarging the model does not help at this data scale.
 - Combined text+graph GO embeddings are required; text-only collapses.
 - **AMPR is markedly more robust to low sequence identity than DeepFRI** — model-only Fmax is nearly flat across identity bins; DeepFRI leans on close homologs.
-- **The DIAMOND ensemble lifts Fmax on every branch/split.** With it, AMPR beats DeepFRI on BP and CC at every split except CC LT_95 (statistically tied); BP is a decisive win.
-- The single clear remaining gap is **MF at high identity (LT_95)**.
+- **The DIAMOND ensemble lifts Fmax on every branch/bin.** With it, AMPR beats DeepFRI on all 5 BP bins and on CC LT_30/40/50; BP is a decisive win.
+- The clearest remaining gap is **MF**, where DeepFRI leads across the curve.
 
 **Next steps (priority order)**
 1. **MF high-identity gap** — tune ensemble α per branch (`tune_alpha`); MF likely benefits from a higher DIAMOND weight since its homology hits are strong. Also revisit per-threshold calibration (AMPR already wins MF AUPRC at LT_30).

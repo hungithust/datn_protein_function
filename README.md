@@ -14,12 +14,13 @@ Separate models for the three GO branches: **MF**, **BP**, **CC**.
 
 | Branch | Fmax (LT_30, novel) | Fmax (LT_95, full test) | vs DeepFRI |
 |---|---|---|---|
-| MF | 0.515 | 0.614 | competitive |
-| BP | **0.460** | **0.507** | **beats DeepFRI** (+0.11–0.18) |
-| CC | **0.515** | 0.538 | beats at LT_30, ~tied at LT_95 |
+| MF | 0.515 | 0.614 | DeepFRI leads on Fmax; AMPR wins AUPRC at LT_30 |
+| BP | **0.460** | **0.507** | **beats DeepFRI at all 5 identity bins** (+0.11–0.18) |
+| CC | **0.515** | 0.538 | beats at LT_30/40/50; behind at LT_70/95 |
 
-AMPR is notably **robust to low sequence identity** (Fmax stays nearly flat from
-high- to low-similarity proteins). Full analysis: [docs/REPORT_v3_esm3b.md](docs/REPORT_v3_esm3b.md).
+AMPR is notably **robust to low sequence identity** — Fmax stays nearly flat from
+high- to low-similarity proteins, whereas DeepFRI drops steeply. Full identity curve
+and analysis: [docs/REPORT_v3_esm3b.md](docs/REPORT_v3_esm3b.md) · [docs/RESULTS_DATA.md](docs/RESULTS_DATA.md).
 
 ## Inference — predict GO terms for your own proteins
 
