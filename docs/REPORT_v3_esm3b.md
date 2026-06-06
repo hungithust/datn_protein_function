@@ -62,19 +62,24 @@ A consistent ~0.19–0.21 drop from validation to test across all three branches
 
 > Note: with the LR scheduler, MF best val (0.7452) is marginally below the no-scheduler sweep run (0.7525). The scheduler smooths late-epoch oscillation but did not raise the peak here; it is retained for stability/consistency across branches.
 
-### 4.1 Regularization probe (MF)
+### 4.1 Regularization probe (all branches)
 
-To test whether the gap is overfitting, a 4-cell grid `weight_decay {1e-4, 1e-2} × dropout {0.2, 0.3}` (AdamW) was trained for MF and evaluated on LT_95.
+To test whether the gap is overfitting, a 4-cell grid `weight_decay {1e-4, 1e-2} × dropout {0.2, 0.3}` (AdamW) was trained per branch and evaluated on LT_95. Cells are **selected by validation Fmax** (no test peeking); test shown for the val-best cell.
 
-| Cell | val Fmax | test (model) | test (+DIAMOND) | gap |
-|---|---|---|---|---|
-| **wd=1e-2, dropout=0.2** | **0.7603** | **0.5559** | 0.6180 | 0.204 |
-| wd=1e-4, dropout=0.3 | 0.7431 | 0.5540 | 0.6235 | 0.189 |
-| wd=1e-4, dropout=0.2 | 0.7525 | 0.5419 | 0.6155 | 0.211 |
-| wd=1e-2, dropout=0.3 | 0.7268 | 0.5374 | 0.6128 | 0.189 |
-| baseline (wd=0, dropout=0.1) | 0.7452 | 0.5498 | 0.6142 | 0.195 |
+| Branch | best-by-val cell | val Fmax | test (model) | test (+DIAMOND) | baseline val / test+D |
+|---|---|---|---|---|---|
+| **MF** | wd=1e-2, do=0.2 | **0.7603** | **0.5559** | **0.6180** | 0.7452 / 0.6142 |
+| BP | wd=1e-4, do=0.2 | 0.6349 | 0.4526 | 0.5223 | **0.6726** / 0.5069 |
+| CC | wd=1e-4, do=0.2 | 0.6770 | 0.5030 | 0.5449 | **0.6817** / 0.5383 |
 
-**Finding:** regularization gives only a **modest** lift — selecting by validation Fmax (the principled criterion) picks `wd=1e-2, dropout=0.2`, which improves test model-only 0.5498→0.5559 (+0.006) and ensemble 0.6142→0.6180 (+0.004). The val→test gap does **not** shrink materially (still ~0.19–0.21), confirming the gap is **largely intrinsic** (the test set is genuinely lower-similarity), not removable overfitting. `wd=1e-2, dropout=0.2` is adopted as a small, free improvement.
+**Finding — regularization is branch-dependent:**
+- **MF benefits:** reg *raises* validation (0.7452→0.7603) and test (model +0.006, ensemble +0.004). Adopted: `wd=1e-2, dropout=0.2`.
+- **BP / CC do not (by the validation criterion):** reg *lowers* validation (BP −0.038 clearly; CC −0.005, ~tied), so baseline is kept for both. BP has the most terms (1943) and appears to need the capacity; added regularization underfits.
+- **Caveat:** on the test **ensemble** metric, every reg cell edged out baseline for BP/CC too (BP +0.015, CC +0.007), likely because regularized probabilities calibrate better for the DIAMOND blend. This is **not** supported by validation and we do not select on test — noted as an observation, not a chosen config.
+
+In all cases the val→test gap stays ~0.19–0.21, confirming it is **largely intrinsic** (genuinely lower-similarity test), not removable overfitting.
+
+**Final configs:** MF uses `wd=1e-2, dropout=0.2`; BP and CC keep the baseline (`wd=0, dropout=0.1`).
 
 ## 5. Comparison to DeepFRI baseline (LT_30 / LT_95)
 
