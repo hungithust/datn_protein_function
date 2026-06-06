@@ -62,6 +62,25 @@ A consistent ~0.19–0.21 drop from validation to test across all three branches
 
 > Note: with the LR scheduler, MF best val (0.7452) is marginally below the no-scheduler sweep run (0.7525). The scheduler smooths late-epoch oscillation but did not raise the peak here; it is retained for stability/consistency across branches.
 
+### 4.1 Regularization probe (all branches)
+
+To test whether the gap is overfitting, a 4-cell grid `weight_decay {1e-4, 1e-2} × dropout {0.2, 0.3}` (AdamW) was trained per branch and evaluated on LT_95. Cells are **selected by validation Fmax** (no test peeking); test shown for the val-best cell.
+
+| Branch | best-by-val cell | val Fmax | test (model) | test (+DIAMOND) | baseline val / test+D |
+|---|---|---|---|---|---|
+| **MF** | wd=1e-2, do=0.2 | **0.7603** | **0.5559** | **0.6180** | 0.7452 / 0.6142 |
+| BP | wd=1e-4, do=0.2 | 0.6349 | 0.4526 | 0.5223 | **0.6726** / 0.5069 |
+| CC | wd=1e-4, do=0.2 | 0.6770 | 0.5030 | 0.5449 | **0.6817** / 0.5383 |
+
+**Finding — regularization is branch-dependent:**
+- **MF benefits:** reg *raises* validation (0.7452→0.7603) and test (model +0.006, ensemble +0.004). Adopted: `wd=1e-2, dropout=0.2`.
+- **BP / CC do not (by the validation criterion):** reg *lowers* validation (BP −0.038 clearly; CC −0.005, ~tied), so baseline is kept for both. BP has the most terms (1943) and appears to need the capacity; added regularization underfits.
+- **Caveat:** on the test **ensemble** metric, every reg cell edged out baseline for BP/CC too (BP +0.015, CC +0.007), likely because regularized probabilities calibrate better for the DIAMOND blend. This is **not** supported by validation and we do not select on test — noted as an observation, not a chosen config.
+
+In all cases the val→test gap stays ~0.19–0.21, confirming it is **largely intrinsic** (genuinely lower-similarity test), not removable overfitting.
+
+**Final configs:** MF uses `wd=1e-2, dropout=0.2`; BP and CC keep the baseline (`wd=0, dropout=0.1`).
+
 ## 5. Comparison to DeepFRI baseline (LT_30 / LT_95)
 
 Evaluated on the two sequence-identity bins DeepFRI reports (`LT_30` = ≤30% identity to train, hardest/novel; `LT_95` = full test, 3,123 proteins). AMPR numbers are DAG-propagated; DeepFRI from Gligorijević et al. 2021 (DeepFRI-GCN). **Bold = better** (higher Fmax/AUPRC).
@@ -92,7 +111,9 @@ Evaluated on the two sequence-identity bins DeepFRI reports (`LT_30` = ≤30% id
 
 ### 5.1 Effect of the DIAMOND ensemble
 
-The homology ensemble lifts Fmax on **every** branch/split (MF +0.037/+0.064, BP +0.025/+0.049, CC +0.025/+0.043 for LT_30/LT_95), with the larger gains at LT_95 where more high-similarity homologs exist (hom-hits: 2323/3123 MF, 2273 BP, 1897 CC at LT_95 vs ~620–840/1582 at LT_30). α=0.6 is the config default and was **not** tuned — `diamond_ensemble.tune_alpha` could squeeze a little more.
+The homology ensemble lifts Fmax on **every** branch/split (MF +0.037/+0.064, BP +0.025/+0.049, CC +0.025/+0.043 for LT_30/LT_95), with the larger gains at LT_95 where more high-similarity homologs exist (hom-hits: 2323/3123 MF, 2273 BP, 1897 CC at LT_95 vs ~620–840/1582 at LT_30).
+
+**Per-branch α tuning (negative result).** Tuning α on the validation split (`--tune-alpha`, sweep 0.3–0.9) selected **α=0.6 for all three branches** — identical to the default — so test metrics are unchanged. The validation split is high-similarity to train, where both the model and DIAMOND are strong and the optimal blend coincides with 0.6; this optimum does not necessarily transfer to the harder low-identity test bins. Conclusion: **α=0.6 is robust; per-branch tuning on the standard valid split yields no gain.** (Bin-specific tuning would need a tune/eval split matched to each LT bin's identity distribution.)
 
 ### 5.2 Takeaways
 

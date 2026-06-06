@@ -2,10 +2,23 @@
 kaggle.json
 struct_embeddings.npy
 checkpoints/
+checkpoints_reg/
 
-results/
+/results/
 
 baselines/deepfri/pretrained/
 results/baselines/
-# DeepFRI/
+/DeepFRI/
 .worktrees/
+
+# cache
+.ipynb_checkpoints/
+__pycache__/
+.pytest_cache/
+
+
+# old notebook
+notebooks\colab_run.ipynb
+notebooks\kaggle_run.ipynb
+notebooks\kaggle_run_final.ipynb
+notebooks\datn-improve.ipynb

@@ -171,7 +171,10 @@ def _run_v3(config: dict, args, log):
     )
     loss_fn = loss_fn.to(device)  # move dag_matrix + pos_weight buffers to GPU
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=train_cfg.get('lr', 1e-3))
+    weight_decay = float(train_cfg.get('weight_decay', 0.0))
+    optimizer = torch.optim.AdamW(model.parameters(), lr=train_cfg.get('lr', 1e-3),
+                                  weight_decay=weight_decay)
+    log.info(f"[V3] optimizer=AdamW lr={train_cfg.get('lr', 1e-3)} weight_decay={weight_decay}")
     grad_clip = float(train_cfg.get('grad_clip', 0.0))  # 0 = off
 
     # Gentle LR scheduler: only acts when val Fmax_dag plateaus (no-op while it keeps
@@ -246,6 +249,19 @@ def _run_v3(config: dict, args, log):
     log.info(f"[V3] Training complete. Best val Fmax (DAG): {best_fmax_dag:.4f}")
 
 
+def _v3_infer(model, loader, go_emb, device):
+    """Run model over a loader -> (probs, labels) numpy arrays (dataset order)."""
+    probs_list, labels_list = [], []
+    with torch.no_grad():
+        for batch in loader:
+            batch_dev = {k: (v.to(device) if torch.is_tensor(v) else v)
+                         for k, v in batch.items()}
+            logits = model(batch_dev, go_emb=go_emb)
+            probs_list.append(torch.sigmoid(logits).cpu().numpy())
+            labels_list.append(batch['labels'].numpy())
+    return np.concatenate(probs_list), np.concatenate(labels_list)
+
+
 def _eval_v3(config: dict, args, log):
     """V3 eval-only: load checkpoint, score a test split, report CAFA metrics."""
     import json
@@ -266,20 +282,23 @@ def _eval_v3(config: dict, args, log):
     split = args.test_split
     log.info(f"[V3-EVAL] device={device} split={split}")
 
-    ds = AMPRDatasetV3(
-        esm2_h5=data_cfg['esm2_h5'], ppi_emb=data_cfg['ppi_emb'],
-        ppi_mask=data_cfg['ppi_mask'], cmap_h5=data_cfg['cmap_h5'],
-        labels=data_cfg['labels'], dag_matrix=data_cfg['dag_matrix'],
-        go_emb=data_cfg['go_emb'], splits=data_cfg['splits'],
-        protein_order=data_cfg['protein_order'], branch=config['branch'],
-        split=split, max_len=train_cfg.get('max_seq_len', 1000),
-    )
-    log.info(f"[V3-EVAL] {split} set: {len(ds)} proteins")
-
-    loader = DataLoader(ds, batch_size=train_cfg['batch_size'], shuffle=False,
+    def mk_loader(which):
+        d = AMPRDatasetV3(
+            esm2_h5=data_cfg['esm2_h5'], ppi_emb=data_cfg['ppi_emb'],
+            ppi_mask=data_cfg['ppi_mask'], cmap_h5=data_cfg['cmap_h5'],
+            labels=data_cfg['labels'], dag_matrix=data_cfg['dag_matrix'],
+            go_emb=data_cfg['go_emb'], splits=data_cfg['splits'],
+            protein_order=data_cfg['protein_order'], branch=config['branch'],
+            split=which, max_len=train_cfg.get('max_seq_len', 1000),
+        )
+        ld = DataLoader(d, batch_size=train_cfg['batch_size'], shuffle=False,
                         collate_fn=collate_variable_length,
                         num_workers=train_cfg.get('num_workers', 0),
                         pin_memory=(device == 'cuda'))
+        return d, ld
+
+    ds, loader = mk_loader(split)
+    log.info(f"[V3-EVAL] {split} set: {len(ds)} proteins")
 
     go_emb = ds.go_emb.to(device)
     go_emb_dim = go_emb.shape[1]
@@ -312,17 +331,7 @@ def _eval_v3(config: dict, args, log):
     log.info(f"[V3-EVAL] loaded checkpoint {ckpt_path} "
              f"(trained epoch={ckpt.get('epoch')}, val_fmax_dag={ckpt.get('fmax_dag')})")
 
-    probs_list, labels_list = [], []
-    with torch.no_grad():
-        for batch in loader:
-            batch_dev = {k: (v.to(device) if torch.is_tensor(v) else v)
-                         for k, v in batch.items()}
-            logits = model(batch_dev, go_emb=go_emb)
-            probs_list.append(torch.sigmoid(logits).cpu().numpy())
-            labels_list.append(batch['labels'].numpy())
-
-    probs = np.concatenate(probs_list)
-    labels = np.concatenate(labels_list)
+    probs, labels = _v3_infer(model, loader, go_emb, device)
     dag_np = ds.dag_matrix.numpy()
     probs_dag = propagate_scores_upward(probs, dag_np)
 
@@ -346,11 +355,23 @@ def _eval_v3(config: dict, args, log):
     diamond_tsv = data_cfg.get('diamond_tsv')
     if inf_cfg.get('use_diamond_ensemble', False) and diamond_tsv and Path(diamond_tsv).exists():
         from ampr.evaluation.diamond_ensemble import (compute_diamond_scores,
-                                                      ensemble_scores)
+                                                      ensemble_scores, tune_alpha)
         with open(data_cfg['splits']) as f:
             train_ids = json.load(f).get('train', [])
         train_order = {p: ds._prot2idx[p] for p in train_ids if p in ds._prot2idx}
-        alpha = float(inf_cfg.get('diamond_alpha', 0.6))
+
+        if args.tune_alpha:
+            # Tune alpha on the validation split (no test leakage), then apply to test.
+            ds_val, ld_val = mk_loader('valid')
+            val_probs, val_labels = _v3_infer(model, ld_val, go_emb, device)
+            val_diamond = compute_diamond_scores(
+                diamond_tsv, ds.labels, train_order, ds_val.protein_ids, config['n_terms'])
+            alpha = tune_alpha(val_probs, val_diamond, val_labels, dag_np)
+            log.info(f"[V3-EVAL] tuned alpha={alpha} on valid "
+                     f"(hom_hits={int((val_diamond.sum(axis=1) > 0).sum())}/{len(val_labels)})")
+        else:
+            alpha = float(inf_cfg.get('diamond_alpha', 0.6))
+
         diamond_probs = compute_diamond_scores(
             diamond_tsv, ds.labels, train_order, ds.protein_ids, config['n_terms'])
         n_hom = int((diamond_probs.sum(axis=1) > 0).sum())
@@ -385,6 +406,8 @@ def main():
                         help='splits.json key to evaluate (test, test_LT_30, test_LT_95, ...)')
     parser.add_argument('--dry_run', action='store_true',
                         help='Limit to ~50 proteins for quick smoke check (v3 only)')
+    parser.add_argument('--tune-alpha', action='store_true',
+                        help='v3 eval: tune DIAMOND ensemble alpha on valid, apply to test')
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
