@@ -164,7 +164,8 @@ class AMPRModelV3(nn.Module):
                  ppi_dim: int = 256,
                  d_hidden: int = 512, fusion_n_heads: int = 8, fusion_n_layers: int = 2,
                  classifier: str = 'both', go_emb_dim: int = 768,
-                 cmap_threshold: float = 10.0, dropout: float = 0.1):
+                 cmap_threshold: float = 10.0, dropout: float = 0.1,
+                 contrastive_proj_dim: int = 0):
         super().__init__()
         from ampr.models.attention_pool import DeepAttentionPool
         from ampr.models.seq_encoder import SeqTransformer
@@ -219,11 +220,24 @@ class AMPRModelV3(nn.Module):
                 d_hidden=d_hidden, go_emb_dim=go_emb_dim, n_terms=n_terms,
                 n_heads=fusion_n_heads, dropout=dropout)
 
+        # Contrastive projection head (Module A) — built only when needed.
+        self.contrastive_proj = None
+        if contrastive_proj_dim and contrastive_proj_dim > 0:
+            self.contrastive_proj = nn.Sequential(
+                nn.Linear(d_hidden, d_hidden), nn.GELU(),
+                nn.Linear(d_hidden, contrastive_proj_dim),
+            )
+
         logger.info(f"[MODEL] AMPRModelV3 n_terms={n_terms} d_hidden={d_hidden} "
                     f"seq={seq_n_layers}L gnn={gnn_n_layers}L fusion={fusion_n_layers}L "
                     f"classifier={classifier}")
 
-    def forward(self, batch: dict, go_emb=None) -> torch.Tensor:
+    def project_contrastive(self, z: torch.Tensor) -> torch.Tensor:
+        assert self.contrastive_proj is not None, "contrastive_proj_dim must be > 0"
+        return self.contrastive_proj(z)
+
+    def forward(self, batch: dict, go_emb=None, return_z: bool = False,
+                ablate: tuple = ()) -> torch.Tensor:
         x_res = batch['x_seq_residue']
         seq_mask = batch['seq_mask']
         cmap = batch['cmap']
@@ -244,21 +258,34 @@ class AMPRModelV3(nn.Module):
         h_ppi = self.ppi_proj(x_ppi)
         h_ppi = h_ppi * ppi_mask.float().unsqueeze(-1)
 
+        # Diagnostic ablation (Phase 0): zero a branch before fusion.
+        if 'seq' in ablate:
+            h_seq = torch.zeros_like(h_seq)
+        if 'gnn' in ablate:
+            h_gnn = torch.zeros_like(h_gnn)
+        if 'ppi' in ablate:
+            h_ppi = torch.zeros_like(h_ppi)
+
         # Fusion
         z = self.fusion(h_seq, h_gnn, h_ppi, ppi_mask)
 
         # Head(s)
         if self.classifier_type == 'label_attn':
             assert go_emb is not None, "label_attn head requires go_emb"
-            return self.label_head(z, go_emb)
-        if self.classifier_type == 'linear':
-            return self.linear_head(z)
-        if self.classifier_type == 'biobert':
+            logits = self.label_head(z, go_emb)
+        elif self.classifier_type == 'linear':
+            logits = self.linear_head(z)
+        elif self.classifier_type == 'biobert':
             assert go_emb is not None
-            return torch.matmul(self.go_emb_proj(z), go_emb.t())
-        # both
-        lin = self.linear_head(z)
-        if go_emb is None:
-            return lin
-        bio = torch.matmul(self.go_emb_proj(z), go_emb.t())
-        return 0.5 * lin + 0.5 * bio
+            logits = torch.matmul(self.go_emb_proj(z), go_emb.t())
+        else:  # both
+            lin = self.linear_head(z)
+            if go_emb is None:
+                logits = lin
+            else:
+                bio = torch.matmul(self.go_emb_proj(z), go_emb.t())
+                logits = 0.5 * lin + 0.5 * bio
+
+        if return_z:
+            return logits, z
+        return logits
