@@ -86,6 +86,17 @@ at every bin (but wins MF AUPRC_micro at LT_30, see §4).
 
 ## 4. DeepFRI-GCN baseline (Gligorijević et al. 2021)
 
+> **Provenance:** DeepFRI numbers taken from `results/deepfri_baseline.json`, whose
+> `_source` cites Gligorijević et al., Nat Commun 2021 (Table 1, DeepFRI-GCN row,
+> https://www.nature.com/articles/s41467-021-23303-9).
+> NOTE: the original DeepFRI paper reports MF Fmax ≈ 0.625–0.631 on its test set. The
+> MF LT_95 value of **0.759** here is therefore NOT the paper's headline number — it is
+> consistent with a re-evaluation under the PDBch LT_* sequence-identity split protocol
+> (LT_95 ≈ paper's least-stringent / highest-identity bin). The JSON `_comment` itself
+> flags that these numbers must be re-verified against the paper before final submission.
+> In the thesis, state explicitly whether each DeepFRI figure is the paper's reported
+> value or a re-evaluation under our LT_* protocol.
+
 | Branch | Bin | Fmax | AUPRC_micro |
 |---|---|---|---|
 | MF | LT_30 / 40 / 50 / 70 / 95 | 0.545 / 0.587 / 0.626 / 0.717 / 0.759 | 0.443 / 0.483 / 0.521 / 0.628 / 0.671 |
