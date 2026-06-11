@@ -8,39 +8,43 @@ Single reference for every metric, extracted from `logs/*.eval_*.log`,
 ## 1. Identity curve — Fmax (headline figure data)
 
 Per branch across all 5 sequence-identity bins. `AMPR` = model only (DAG); `AMPR+D` =
-+ DIAMOND ensemble (α=0.6); `DeepFRI` = DeepFRI-GCN (Gligorijević 2021).
++ DIAMOND ensemble (α=0.6). `DeepFRI` and `HEAL` Fmax taken from **HEAL supplementary
+Table S3.2** (Gu et al., Bioinformatics btad410 2023) — same PDBch test set, same LT_*
+homology bins, same protein-centric Fmax, so directly comparable. (The previously stored
+DeepFRI numbers were wrong; see §4.)
 
 **MF**
-| Bin | AMPR | AMPR+D | DeepFRI |
-|---|---|---|---|
-| LT_30 | 0.4777 | 0.5149 | 0.545 |
-| LT_40 | 0.4850 | 0.5253 | 0.587 |
-| LT_50 | 0.5022 | 0.5495 | 0.626 |
-| LT_70 | 0.5295 | 0.5840 | 0.717 |
-| LT_95 | 0.5498 | 0.6142 | 0.759 |
+| Bin | AMPR | AMPR+D | DeepFRI | HEAL (SOTA) |
+|---|---|---|---|---|
+| LT_30 | 0.4777 | 0.5149 | 0.544 | 0.698 |
+| LT_40 | 0.4850 | 0.5253 | 0.552 | 0.702 |
+| LT_50 | 0.5022 | 0.5495 | 0.575 | 0.719 |
+| LT_70 | 0.5295 | 0.5840 | 0.604 | 0.735 |
+| LT_95 | 0.5498 | 0.6142 | 0.626 | 0.749 |
 
 **BP**
-| Bin | AMPR | AMPR+D | DeepFRI |
-|---|---|---|---|
-| LT_30 | 0.4358 | **0.4603** | 0.282 |
-| LT_40 | 0.4342 | **0.4619** | 0.302 |
-| LT_50 | 0.4390 | **0.4695** | 0.327 |
-| LT_70 | 0.4511 | **0.4865** | 0.365 |
-| LT_95 | 0.4582 | **0.5069** | 0.395 |
+| Bin | AMPR | AMPR+D | DeepFRI | HEAL (SOTA) |
+|---|---|---|---|---|
+| LT_30 | 0.4358 | 0.4603 | 0.502 | 0.582 |
+| LT_40 | 0.4342 | 0.4619 | 0.510 | 0.578 |
+| LT_50 | 0.4390 | 0.4695 | 0.517 | 0.582 |
+| LT_70 | 0.4511 | 0.4865 | 0.533 | 0.592 |
+| LT_95 | 0.4582 | 0.5069 | 0.540 | 0.594 |
 
 **CC**
-| Bin | AMPR | AMPR+D | DeepFRI |
-|---|---|---|---|
-| LT_30 | 0.4909 | **0.5154** | 0.434 |
-| LT_40 | 0.4912 | **0.5164** | 0.462 |
-| LT_50 | 0.4944 | **0.5218** | 0.493 |
-| LT_70 | 0.4930 | 0.5238 | 0.541 |
-| LT_95 | 0.4955 | 0.5383 | 0.561 |
+| Bin | AMPR | AMPR+D | DeepFRI | HEAL (SOTA) |
+|---|---|---|---|---|
+| LT_30 | 0.4909 | 0.5154 | 0.605 | 0.684 |
+| LT_40 | 0.4912 | 0.5164 | 0.606 | 0.682 |
+| LT_50 | 0.4944 | 0.5218 | 0.606 | 0.684 |
+| LT_70 | 0.4930 | 0.5238 | 0.605 | 0.686 |
+| LT_95 | 0.4955 | 0.5383 | 0.612 | 0.687 |
 
-**Robustness (Fmax slope LT_30→LT_95):** AMPR+D MF +0.099, BP +0.047, CC +0.023 —
-much flatter than DeepFRI (MF +0.214, BP +0.113, CC +0.127). AMPR+D beats DeepFRI on
-**all 5 BP bins** and **CC LT_30/40/50** (loses CC LT_70/95, close); MF trails on Fmax
-at every bin (but wins MF AUPRC_micro at LT_30, see §4).
+**Standing vs DeepFRI (corrected):** AMPR+D currently **trails DeepFRI on all three
+ontologies** — MF close (LT_95 0.614 vs 0.626, −0.012), BP −0.033, CC −0.074 — and trails
+HEAL (the SOTA) substantially. The earlier claim that AMPR beat DeepFRI on BP/CC was an
+artifact of the wrong stored DeepFRI numbers. The large AMPR val→test gap (~0.20, §5)
+is the gap to close: val MF 0.76 would exceed DeepFRI if it transferred to test.
 
 ## 2. Model-only metrics per bin (DAG-propagated)
 
@@ -84,26 +88,43 @@ at every bin (but wins MF AUPRC_micro at LT_30, see §4).
 | CC | LT_70 | 0.5238 | 0.7829 | 0.3810 | 0.8488 | 1346/2515 |
 | CC | LT_95 | 0.5383 | 0.7598 | 0.4011 | 0.8527 | 1897/3123 |
 
-## 4. DeepFRI-GCN baseline (Gligorijević et al. 2021)
+## 4. DeepFRI + HEAL baselines (corrected — source: HEAL supplementary)
 
-> **Provenance:** DeepFRI numbers taken from `results/deepfri_baseline.json`, whose
-> `_source` cites Gligorijević et al., Nat Commun 2021 (Table 1, DeepFRI-GCN row,
-> https://www.nature.com/articles/s41467-021-23303-9).
-> NOTE: the original DeepFRI paper reports MF Fmax ≈ 0.625–0.631 on its test set. The
-> MF LT_95 value of **0.759** here is therefore NOT the paper's headline number — it is
-> consistent with a re-evaluation under the PDBch LT_* sequence-identity split protocol
-> (LT_95 ≈ paper's least-stringent / highest-identity bin). The JSON `_comment` itself
-> flags that these numbers must be re-verified against the paper before final submission.
-> In the thesis, state explicitly whether each DeepFRI figure is the paper's reported
-> value or a re-evaluation under our LT_* protocol.
+> **Provenance (CORRECTED 2026-06-11):** the previously stored DeepFRI numbers
+> (`results/deepfri_baseline.json`, e.g. MF LT_95 = 0.759, BP LT_95 = 0.395) were
+> **wrong** and have been discarded. The authoritative values below come from **HEAL
+> supplementary information, Tables S3.1 (macro-AUPR) and S3.2 (Fmax)** — Gu et al.,
+> "Hierarchical Graph Transformer with Contrastive Learning for Protein Function
+> Prediction", Bioinformatics btad410 (2023). HEAL reports DeepFRI, DeepGO, HEAL-PDB
+> and HEAL on the **same PDBch test set**, the **same five LT_* homology bins to the
+> training set**, and the **same protein-centric Fmax / macro-AUPR** we use, averaged
+> over 10-bootstrap samples — so these are directly comparable to our AMPR numbers.
+> File: `baselines/HEAL/supplementary-data.md`.
 
-| Branch | Bin | Fmax | AUPRC_micro |
-|---|---|---|---|
-| MF | LT_30 / 40 / 50 / 70 / 95 | 0.545 / 0.587 / 0.626 / 0.717 / 0.759 | 0.443 / 0.483 / 0.521 / 0.628 / 0.671 |
-| BP | LT_30 / 40 / 50 / 70 / 95 | 0.282 / 0.302 / 0.327 / 0.365 / 0.395 | 0.169 / 0.185 / 0.203 / 0.243 / 0.272 |
-| CC | LT_30 / 40 / 50 / 70 / 95 | 0.434 / 0.462 / 0.493 / 0.541 / 0.561 | 0.308 / 0.339 / 0.367 / 0.418 / 0.443 |
+**Fmax (Table S3.2)**
+| Branch | Model | <30 | <40 | <50 | <70 | <95 |
+|---|---|---|---|---|---|---|
+| MF | DeepFRI | 0.544 | 0.552 | 0.575 | 0.604 | 0.626 |
+| MF | HEAL | 0.698 | 0.702 | 0.719 | 0.735 | 0.749 |
+| BP | DeepFRI | 0.502 | 0.510 | 0.517 | 0.533 | 0.540 |
+| BP | HEAL | 0.582 | 0.578 | 0.582 | 0.592 | 0.594 |
+| CC | DeepFRI | 0.605 | 0.606 | 0.606 | 0.605 | 0.612 |
+| CC | HEAL | 0.684 | 0.682 | 0.684 | 0.686 | 0.687 |
 
-> AMPR wins MF AUPRC_micro at LT_30 (0.502 vs 0.443) despite trailing on MF Fmax.
+**macro-AUPR (Table S3.1)**
+| Branch | Model | <30 | <40 | <50 | <70 | <95 |
+|---|---|---|---|---|---|---|
+| MF | DeepFRI | 0.425 | 0.443 | 0.463 | 0.485 | 0.504 |
+| MF | HEAL | 0.638 | 0.641 | 0.663 | 0.681 | 0.698 |
+| BP | DeepFRI | 0.214 | 0.218 | 0.232 | 0.253 | 0.268 |
+| BP | HEAL | 0.300 | 0.296 | 0.311 | 0.327 | 0.345 |
+| CC | DeepFRI | 0.248 | 0.248 | 0.251 | 0.258 | 0.285 |
+| CC | HEAL | 0.429 | 0.434 | 0.434 | 0.445 | 0.468 |
+
+> Note on AUPR: HEAL reports **macro**-AUPR. AMPR §2 lists both; compare against
+> AMPR `AUPRC_macro`. Example: AMPR MF macro-AUPR LT_30 = 0.458 vs DeepFRI 0.425 — AMPR
+> wins macro-AUPR at the hardest MF bin, even though it trails DeepFRI on Fmax. Note
+> HEAL itself uses contrastive learning (hierarchical/structure-based), reaching MF 0.749.
 
 ## 5. Validation Fmax_dag (best, final configs)
 
