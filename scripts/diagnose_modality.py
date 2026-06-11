@@ -11,11 +11,14 @@ Usage:
 """
 import argparse
 import json
+import sys
 import numpy as np
 import torch
 import yaml
 from pathlib import Path
 from torch.utils.data import DataLoader
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ampr.data.dataset import AMPRDatasetV3, collate_variable_length
 from ampr.models.ampr import AMPRModelV3
