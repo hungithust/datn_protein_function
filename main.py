@@ -123,6 +123,10 @@ def _run_v3(config: dict, args, log):
     ppi_cfg = model_cfg.get('ppi', {})
     fusion_cfg = model_cfg.get('fusion', {})
 
+    contr_cfg = train_cfg.get('contrastive', {}) or {}
+    contr_enabled = bool(contr_cfg.get('enabled', False))
+    contr_proj_dim = int(contr_cfg.get('proj_dim', 128)) if contr_enabled else 0
+
     model = AMPRModelV3(
         n_terms=config['n_terms'],
         seq_dim=seq_cfg.get('d_model', 1280),
@@ -138,6 +142,7 @@ def _run_v3(config: dict, args, log):
         go_emb_dim=go_emb_dim,
         cmap_threshold=gnn_cfg.get('cmap_threshold', 10.0),
         dropout=seq_cfg.get('dropout', 0.1),
+        contrastive_proj_dim=contr_proj_dim,
     )
 
     model = model.to(device)
@@ -177,6 +182,19 @@ def _run_v3(config: dict, args, log):
     log.info(f"[V3] optimizer=AdamW lr={train_cfg.get('lr', 1e-3)} weight_decay={weight_decay}")
     grad_clip = float(train_cfg.get('grad_clip', 0.0))  # 0 = off
 
+    contrastive_loss_fn = None
+    contrastive_weight = 0.0
+    if contr_enabled:
+        from ampr.training.contrastive import MultiLabelSupConLoss
+        contrastive_loss_fn = MultiLabelSupConLoss(
+            temp=float(contr_cfg.get('temp', 0.1)),
+            jaccard_thr=float(contr_cfg.get('jaccard_thr', 0.0)))
+        contrastive_weight = float(contr_cfg.get('weight', 0.5))
+        log.info(f"[V3] Contrastive (Module A): SupCon "
+                 f"temp={contr_cfg.get('temp', 0.1)} "
+                 f"jaccard_thr={contr_cfg.get('jaccard_thr', 0.0)} "
+                 f"weight={contrastive_weight} proj_dim={contr_proj_dim}")
+
     # Gentle LR scheduler: only acts when val Fmax_dag plateaus (no-op while it keeps
     # improving). Config-gated; 'none' preserves the fixed-LR behavior.
     scheduler = None
@@ -198,7 +216,9 @@ def _run_v3(config: dict, args, log):
     for epoch in range(1, epochs + 1):
         train_loss = train_one_epoch_v3(model, ld_train, loss_fn, optimizer,
                                         go_emb=go_emb, device=device,
-                                        grad_clip=grad_clip)
+                                        grad_clip=grad_clip,
+                                        contrastive_loss_fn=contrastive_loss_fn,
+                                        contrastive_weight=contrastive_weight)
 
         # Val inference
         model.eval()
