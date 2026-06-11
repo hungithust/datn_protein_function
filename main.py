@@ -342,6 +342,7 @@ def _eval_v3(config: dict, args, log):
         go_emb_dim=go_emb_dim,
         cmap_threshold=gnn_cfg.get('cmap_threshold', 10.0),
         dropout=seq_cfg.get('dropout', 0.1),
+        contrastive_proj_dim=(train_cfg.get('contrastive', {}) or {}).get('proj_dim', 0),
     ).to(device)
 
     ckpt_path = args.checkpoint or str(Path(out_cfg['checkpoint_dir']) / 'best.pt')
