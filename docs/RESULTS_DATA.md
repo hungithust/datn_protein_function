@@ -40,11 +40,49 @@ DeepFRI numbers were wrong; see §4.)
 | LT_70 | 0.4930 | 0.5238 | 0.605 | 0.686 |
 | LT_95 | 0.4955 | 0.5383 | 0.612 | 0.687 |
 
-**Standing vs DeepFRI (corrected):** AMPR+D currently **trails DeepFRI on all three
-ontologies** — MF close (LT_95 0.614 vs 0.626, −0.012), BP −0.033, CC −0.074 — and trails
-HEAL (the SOTA) substantially. The earlier claim that AMPR beat DeepFRI on BP/CC was an
-artifact of the wrong stored DeepFRI numbers. The large AMPR val→test gap (~0.20, §5)
-is the gap to close: val MF 0.76 would exceed DeepFRI if it transferred to test.
+**Standing vs DeepFRI (single model, corrected):** a *single* AMPR+D model trails DeepFRI
+on all three ontologies — MF close (LT_95 0.614 vs 0.626, −0.012), BP −0.033, CC −0.074.
+The earlier claim that AMPR beat DeepFRI on BP/CC was an artifact of the wrong stored
+DeepFRI numbers. **The 3-seed ensemble (§1b) closes this** — see below.
+
+## 1b. 3-seed ensemble — Fmax (final headline)
+
+Average sigmoid probs over 3 seeds {42, 123, 2024} of the v3 config, then DAG-propagate
+(`ens dag`) and DIAMOND-blend (`ens +D`, α=0.6). Script: `scripts/ensemble_eval.py`.
+Ensembling adds ~+0.02–0.035 test Fmax over a single model — variance reduction, no
+architecture change.
+
+**MF** — ensemble +D **beats DeepFRI at every bin**:
+| Bin | single +D | **ens +D** | DeepFRI | HEAL |
+|---|---|---|---|---|
+| LT_30 | 0.5149 | **0.5617** | 0.544 | 0.698 |
+| LT_40 | 0.5253 | **0.5709** | 0.552 | 0.702 |
+| LT_50 | 0.5495 | **0.5939** | 0.575 | 0.719 |
+| LT_70 | 0.5840 | **0.6248** | 0.604 | 0.735 |
+| LT_95 | 0.6142 | **0.6492** | 0.626 | 0.749 |
+
+**BP** — ensemble +D tiệm cận DeepFRI (LT_95 −0.007):
+| Bin | single +D | ens +D | DeepFRI | HEAL |
+|---|---|---|---|---|
+| LT_30 | 0.4603 | 0.4904 | 0.502 | 0.582 |
+| LT_40 | 0.4619 | 0.4924 | 0.510 | 0.578 |
+| LT_50 | 0.4695 | 0.5006 | 0.517 | 0.582 |
+| LT_70 | 0.4865 | 0.5162 | 0.533 | 0.592 |
+| LT_95 | 0.5069 | 0.5330 | 0.540 | 0.594 |
+
+**CC** — ensemble +D improves +0.022 but still trails DeepFRI:
+| Bin | single +D | ens +D | DeepFRI | HEAL |
+|---|---|---|---|---|
+| LT_30 | 0.5154 | 0.5453 | 0.605 | 0.684 |
+| LT_40 | 0.5164 | 0.5445 | 0.606 | 0.682 |
+| LT_50 | 0.5218 | 0.5495 | 0.606 | 0.684 |
+| LT_70 | 0.5238 | 0.5497 | 0.605 | 0.686 |
+| LT_95 | 0.5383 | 0.5603 | 0.612 | 0.687 |
+
+**Standing (3-seed ensemble, final):** **AMPR+D beats DeepFRI on MF at all five bins**
+(LT_95 0.649 vs 0.626, +0.023) and comes within 0.007 of DeepFRI on BP at LT_95; CC still
+trails (−0.052). All three remain below HEAL. (ens model-only `dag` Fmax LT_95: MF 0.590,
+BP 0.531, CC 0.531.)
 
 ## 2. Model-only metrics per bin (DAG-propagated)
 
