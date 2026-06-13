@@ -147,6 +147,13 @@ def _run_v3(config: dict, args, log):
 
     model = model.to(device)
 
+    if getattr(args, 'init_from', None):
+        from ampr.training.trainer import load_checkpoint_weights
+        info = load_checkpoint_weights(model, args.init_from, map_location=device)
+        log.info(f"[V3] init-from {args.init_from}: loaded "
+                 f"(pretrain epoch={info['epoch']}, "
+                 f"missing={len(info['missing'])}, unexpected={len(info['unexpected'])})")
+
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     log.info(f"[V3] Trainable params: {n_params:,}")
 
@@ -429,6 +436,8 @@ def main():
                         help='Limit to ~50 proteins for quick smoke check (v3 only)')
     parser.add_argument('--tune-alpha', action='store_true',
                         help='v3 eval: tune DIAMOND ensemble alpha on valid, apply to test')
+    parser.add_argument('--init-from', type=str, default=None,
+                        help='v3: load model weights from this checkpoint before training (stage-2 finetune)')
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:

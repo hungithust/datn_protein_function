@@ -19,6 +19,20 @@ from ampr.training.loss import AMPRLoss
 logger = logging.getLogger('ampr')
 
 
+def load_checkpoint_weights(model, path, map_location="cpu"):
+    """Load weights from a checkpoint into `model` for stage-2 finetune.
+
+    Accepts either a dict with a 'model' key (our save format) or a bare
+    state_dict. Returns {'epoch', 'missing', 'unexpected'} for logging.
+    """
+    import torch
+    ckpt = torch.load(path, map_location=map_location)
+    state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    epoch = ckpt.get("epoch") if isinstance(ckpt, dict) else None
+    return {"epoch": epoch, "missing": list(missing), "unexpected": list(unexpected)}
+
+
 def _batch_to_model_kwargs(batch: dict, device) -> dict:
     """Extract cmap-related fields and move to device if present."""
     out = {}
