@@ -59,6 +59,8 @@ coi là so sánh không công bằng.
 ### Thành phần 1 — Trích xuất dữ liệu từ TFRecords *(rủi ro cao nhất → GATE đầu tiên)*
 
 **Đầu vào:** tar.gz TFRecords DeepFRI SWISS-MODEL-GO (~220,297 chain).
+**Link tải:** `https://users.flatironinstitute.org/~renfrew/DeepFRI_data/SWISS-MODEL-GO.tar.gz`
+(các tập khác cùng thư mục: `PDB-GO.tar.gz`, `PDB-EC.tar.gz`, `SWISS-MODEL-EC.tar.gz`).
 **Đầu ra:** với mỗi chain: `sequence` (str), `Cα contact map` nhị phân ngưỡng 10Å (đúng
 format GNN đang ăn), `nhãn GO` mf/bp/cc (multi-hot), `chain_id`.
 
