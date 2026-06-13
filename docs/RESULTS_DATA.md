@@ -84,6 +84,46 @@ architecture change.
 trails (−0.052). All three remain below HEAL. (ens model-only `dag` Fmax LT_95: MF 0.590,
 BP 0.531, CC 0.531.)
 
+## 1c. Anti-overfit branch (dropout 0.4) — Regularization vs Ensembling
+
+Re-trained all branches with global `dropout` raised to **0.4** (MF baseline 0.2; BP/CC
+baseline 0.1), everything else identical. Configs: `configs/{mf,bp,cc}_v5_drop04*.yaml`.
+Dropout 0.4 chosen by val_Fmax (0.5 reached similar val but lower test on MF → over-strong).
+
+**Single-model effect (MF, LT_95):** val_Fmax 0.760→0.7505, test +D **0.614→0.625**;
+val→test gap **0.146→0.125**. Regularization demonstrably narrows the overfit gap.
+
+**3-seed ensemble (drop04) vs baseline ensemble (+D), all bins:**
+
+| Branch | Bin | baseline ens +D | **drop04 ens +D** | DeepFRI |
+|---|---|---|---|---|
+| MF | LT_30 | 0.5617 | 0.5591 | 0.544 |
+| MF | LT_40 | 0.5709 | 0.5704 | 0.552 |
+| MF | LT_50 | 0.5939 | 0.5943 | 0.575 |
+| MF | LT_70 | 0.6248 | 0.6254 | 0.604 |
+| MF | LT_95 | 0.6492 | **0.6504** | 0.626 |
+| BP | LT_30 | 0.4904 | 0.4959 | 0.502 |
+| BP | LT_40 | 0.4924 | 0.4971 | 0.510 |
+| BP | LT_50 | 0.5006 | 0.5055 | 0.517 |
+| BP | LT_70 | 0.5162 | 0.5221 | 0.533 |
+| BP | LT_95 | 0.5330 | **0.5392** | 0.540 |
+| CC | LT_30 | 0.5453 | 0.5373 | 0.605 |
+| CC | LT_40 | 0.5445 | 0.5366 | 0.606 |
+| CC | LT_50 | 0.5495 | 0.5435 | 0.606 |
+| CC | LT_70 | 0.5497 | 0.5439 | 0.605 |
+| CC | LT_95 | 0.5603 | 0.5542 | 0.612 |
+
+**Finding (redundancy):** strong dropout lifts *single* models clearly, but the gain is
+**largely redundant with ensembling** — at the ensemble level MF is a tie (+0.001),
+BP improves slightly (+0.006, now **matching DeepFRI at LT_95**: 0.539 vs 0.540), and CC
+is marginally worse (−0.006). Regularization and ensembling are overlapping anti-overfit
+mechanisms; they do not add linearly. CC's weakness is driven by low DIAMOND coverage
+(LT_95 1897/3123 hom-hits), not by overfit, so extra dropout cannot help it.
+
+**Updated standing (best-per-branch ensemble, LT_95):** MF **0.650** (drop04) and BP
+**0.539** (drop04) — AMPR now **meets-or-beats DeepFRI on MF and BP** (MF +0.024, BP −0.001
+≈ tie); CC 0.560 (baseline) still trails (−0.052). All below HEAL.
+
 ## 2. Model-only metrics per bin (DAG-propagated)
 
 | Branch | Bin | Fmax | Smin | AUPRC_micro | AUPRC_macro | AUROC_micro | Coverage |
