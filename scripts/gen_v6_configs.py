@@ -60,7 +60,9 @@ def generate(out_dir, sm_dir, pdb_emb, sm_emb, sm_cmap):
                 "go_emb":        f"data/embeddings/go_emb_{short}_v2.npy",
             },
             "model": _common_model(),
-            "training": _training(epochs=30, lr=1.0e-3, seed=42),
+            # warm-continue pretrain (launcher --init-from old best.pt): lower LR to
+            # refine from the ~0.58 checkpoint instead of disrupting it.
+            "training": _training(epochs=30, lr=5.0e-4, seed=42),
             "inference": {"use_dag_propagation": True},
             "output": {
                 "checkpoint_dir": ck,
@@ -90,7 +92,9 @@ def generate(out_dir, sm_dir, pdb_emb, sm_emb, sm_cmap):
                     "diamond_tsv":   f"data/diamond/diamond_results_{short}.tsv",
                 },
                 "model": _common_model(),
-                "training": _training(epochs=30, lr=1.0e-4, seed=seed),  # low LR for finetune
+                # 60 epochs + lr 3e-4: prior 30ep/1e-4 under-trained (val Fmax still
+                # climbing monotonically at epoch 30, no plateau).
+                "training": _training(epochs=60, lr=3.0e-4, seed=seed),
                 "inference": {
                     "use_dag_propagation": True, "use_diamond_ensemble": True,
                     "diamond_alpha": 0.6,

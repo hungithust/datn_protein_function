@@ -8,10 +8,13 @@ mkdir -p logs
 
 run_branch() {  # $1=short  $2=gpu
   local short="$1" gpu="$2"
-  # Stage 1: pretrain (seed 42)
-  CUDA_VISIBLE_DEVICES="$gpu" python main.py --config "configs/${short}_v6sm_pretrain.yaml" \
-    2>&1 | tee "logs/${short}_v6sm_pretrain.run.log"
   local pre="checkpoints/${short}_v6sm_pretrain/best.pt"
+  # Stage 1: pretrain (seed 42). Warm-continue from an existing checkpoint if present
+  # (salvages prior pretrain compute; lower LR in config refines rather than disrupts).
+  local warm=""
+  [ -f "$pre" ] && warm="--init-from $pre"
+  CUDA_VISIBLE_DEVICES="$gpu" python main.py --config "configs/${short}_v6sm_pretrain.yaml" $warm \
+    2>&1 | tee "logs/${short}_v6sm_pretrain.run.log"
   # Stage 2: finetune from the pretrained checkpoint, 3 seeds
   for seed in 42 123 2024; do
     CUDA_VISIBLE_DEVICES="$gpu" python main.py \
