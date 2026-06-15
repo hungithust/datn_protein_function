@@ -21,7 +21,8 @@ run_branch() {  # $1=short  $2=gpu
   done
 }
 
-tmux kill-session -t v6_mf 2>/dev/null || true; tmux new-session -d -s v6_mf "$(declare -f run_branch); run_branch mf 0"
-tmux kill-session -t v6_bp 2>/dev/null || true; tmux new-session -d -s v6_bp "$(declare -f run_branch); run_branch bp 1"
-tmux kill-session -t v6_cc 2>/dev/null || true; tmux new-session -d -s v6_cc "$(declare -f run_branch); run_branch cc 2"
-echo "[v6] launched mf/bp/cc on GPUs 0/1/2 — watch logs/*_v6sm_*.run.log"
+# NOTE(node-07): GPUs 0-1 are held by another process (~129GiB vllm) — use 2-7 only.
+tmux kill-session -t v6_mf 2>/dev/null || true; tmux new-session -d -s v6_mf "$(declare -f run_branch); run_branch mf 2"
+tmux kill-session -t v6_bp 2>/dev/null || true; tmux new-session -d -s v6_bp "$(declare -f run_branch); run_branch bp 3"
+tmux kill-session -t v6_cc 2>/dev/null || true; tmux new-session -d -s v6_cc "$(declare -f run_branch); run_branch cc 4"
+echo "[v6] launched mf/bp/cc on GPUs 2/3/4 — watch logs/*_v6sm_*.run.log"
