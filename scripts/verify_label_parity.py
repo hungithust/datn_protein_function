@@ -9,10 +9,12 @@ can be consumed directly with no remap.
 import argparse
 import glob as _glob
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from ampr.data.tfrecord_loader import iter_tfrecord
 
 
