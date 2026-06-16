@@ -41,7 +41,7 @@ training:
   lr_patience: 5
   lr_min: 1.0e-05
   weight_decay: 0.01
-  loss_type: asl
+  loss_type: bce
   asl_gamma_neg: 4
   asl_gamma_pos: 0
   asl_clip: 0.05
@@ -50,6 +50,7 @@ training:
   device: auto
   max_seq_len: 1000
   num_workers: 16
+  pos_weight_cap: 50.0
 inference:
   use_dag_propagation: true
 output:

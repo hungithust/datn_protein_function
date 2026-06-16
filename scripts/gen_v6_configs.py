@@ -64,6 +64,15 @@ def generate(out_dir, sm_dir, pdb_emb, sm_emb, sm_cmap):
             # refine from the ~0.58 checkpoint instead of disrupting it.
             "training": _training(epochs=30, lr=5.0e-4, seed=42),
             "inference": {"use_dag_propagation": True},
+        }
+        if short == "bp":
+            # BP (1943-term long tail) collapses under ASL on 220K SWISS-MODEL
+            # (flat val Fmax ~0.20, dead gradient — same failure as Phase3 MF).
+            # BCE + pos_weight is the proven cure; cold restart (no warm-init).
+            cfg["training"]["loss_type"] = "bce"
+            cfg["training"]["pos_weight_cap"] = 50.0
+        cfg = {
+            **cfg,
             "output": {
                 "checkpoint_dir": ck,
                 "log_file": f"logs/{short}_v6sm_pretrain.log",
