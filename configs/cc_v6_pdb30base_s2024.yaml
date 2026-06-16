@@ -1,0 +1,62 @@
+branch: CC
+n_terms: 320
+seed: 2024
+data:
+  protein_order: data/pdbch/protein_order.json
+  splits: data/pdbch/splits.json
+  labels: data/pdbch/labels_cc.npy
+  dag_matrix: data/pdbch/dag_matrix_cc.npy
+  esm2_h5: data/embeddings/esm2_650m_pdb.h5
+  ppi_emb: data/embeddings/ppi_deepgo.npy
+  ppi_mask: data/embeddings/ppi_deepgo_mask.npy
+  cmap_h5: data/contact_maps/cmap_all.h5
+  go_emb: data/embeddings/go_emb_cc_v2.npy
+  diamond_tsv: data/diamond/diamond_results_cc.tsv
+model:
+  version: v3
+  structure_modality: gnn
+  seq:
+    d_model: 1280
+    n_transformer_layers: 2
+    n_heads: 8
+    dropout: 0.4
+  gnn:
+    node_dim: 256
+    n_layers: 3
+    cmap_threshold: 10.0
+  ppi:
+    in_dim: 256
+    hidden: 512
+  fusion:
+    d_model: 512
+    n_layers: 2
+    n_heads: 8
+  classifier: both
+  d_hidden: 512
+training:
+  epochs: 60
+  batch_size: 64
+  lr: 0.0003
+  lr_scheduler: plateau
+  lr_factor: 0.5
+  lr_patience: 5
+  lr_min: 1.0e-05
+  weight_decay: 0.01
+  loss_type: asl
+  asl_gamma_neg: 4
+  asl_gamma_pos: 0
+  asl_clip: 0.05
+  lambda_dag: 0.5
+  seed: 2024
+  device: auto
+  max_seq_len: 1000
+  num_workers: 16
+inference:
+  use_dag_propagation: true
+  use_diamond_ensemble: true
+  diamond_alpha: 0.6
+  threshold_path: checkpoints/cc_v6_pdb30base_s2024/threshold.json
+output:
+  checkpoint_dir: checkpoints/cc_v6_pdb30base_s2024/
+  log_file: logs/cc_v6_pdb30base_s2024.log
+  results_file: results/cc_v6_pdb30base_s2024_predictions.tsv
