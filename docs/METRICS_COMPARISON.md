@@ -17,10 +17,16 @@ Bộ metric **chuẩn** của subfield này (DeepFRI 2021, HEAL 2023, DeepGO) l�
 | **AUPR (macro)** | diện tích Precision–Recall, trung bình theo **term** | cao tốt | ✅ mọi model |
 | **Smin** | khoảng cách ngữ nghĩa theo Information Content | thấp tốt | ⚠️ xem dưới |
 
-- **AUC (ROC-AUC) KHÔNG phải metric chuẩn ở đây.** DeepFRI và HEAL **không công bố AUC**
-  trên PDBch — vì nhãn GO cực thưa nên ROC-AUC bị thổi phồng (~0.9) và không phân biệt được
-  model. Cộng đồng dùng **AUPR thay cho AUC** chính vì lý do này. → Không có số AUC baseline
-  để đối chiếu (xem §4 cho AUROC của riêng AMPR).
+- **AUC phụ thuộc LINEAGE benchmark — đây là điểm dễ sai nhất.** Có HAI dòng benchmark
+  riêng biệt, **không trộn số được**:
+  - **Lineage A — PDBch** (DeepFRI 2021, HEAL 2023): cấu trúc **thực nghiệm PDB**, train ~30K,
+    test 3,416, term 489/1943/320. Metric **Fmax/AUPR/Smin — KHÔNG có AUC** (nhãn thưa → ROC-AUC
+    bị thổi phồng, vô nghĩa). **AMPR thuộc lineage này** → §1–§4.
+  - **Lineage B — human-AF/Struct2GO** (Struct2GO 2023, StructSeq2GO, GAT-GO): protein **người**
+    + cấu trúc **AlphaFold2**, term 273/809/298, split 8:1:1. Metric **Fmax/AUC/AUPR — CÓ AUC**.
+    → §6 (tham khảo, **không so trực tiếp với AMPR**).
+  - Cùng một model (DeepFRI) cho **số khác nhau** giữa 2 lineage (MFO 0.542 ở B vs MF 0.626 ở A)
+    → tuyệt đối không ghép chung bảng.
 - **Smin của AMPR là biến thể chuẩn hoá [0,1]**, KHÁC Smin raw-IC của DeepFRI/HEAL → **không
   so trực tiếp** được. Vì vậy bảng chính dưới đây dùng **Fmax và macro-AUPR** (hai metric
   *vừa chuẩn vừa so chéo được*).
@@ -106,6 +112,36 @@ chỉ trình bày như chỉ số phụ của riêng AMPR, kèm giải thích v�
 
 ---
 
+## 6. Lineage B — benchmark human-AF / Struct2GO (THAM KHẢO, không so với AMPR)
+
+> **CẢNH BÁO:** Bảng này **KHÁC benchmark** với §1–§4. Protein **người** + cấu trúc
+> **AlphaFold2** (≠ PDBch dùng cấu trúc thực nghiệm). Số GO term khác: **MFO 273, BPO 809,
+> CCO 298** (PDBch: 489/1943/320). Dataset 20,395 protein, split 8:1:1. **KHÔNG ghép số này
+> với AMPR/DeepFRI-PDBch.** Đưa vào đây chỉ để khảo sát literature + thấy lineage này dùng AUC.
+
+**StructSeq2GO Table 3 — "Experimental results on human protein data"** (nguồn: bảng trong
+paper *A unified graph-based approach…*, ScienceDirect S1476927125002701). Giá trị chép
+nguyên từ paper:
+
+| Model | BPO Fmax | BPO AUC | BPO AUPR | CCO Fmax | CCO AUC | CCO AUPR | MFO Fmax | MFO AUC | MFO AUPR |
+|---|---|---|---|---|---|---|---|---|---|
+| BLAST (1990) | 0.339 | 0.577 | 0.489 | 0.441 | 0.563 | 0.269 | 0.411 | 0.623 | 0.461 |
+| DeepGO (2018) | 0.327 | 0.639 | 0.571 | 0.589 | 0.695 | 0.448 | 0.404 | 0.760 | 0.625 |
+| DeepGOA (2019) | 0.385 | 0.698 | 0.622 | 0.629 | 0.757 | 0.500 | 0.477 | 0.820 | 0.710 |
+| DeepFRI (2021) | 0.425 | 0.732 | 0.635 | 0.624 | 0.779 | 0.641 | 0.542 | 0.881 | 0.763 |
+| GAT-GO (2022) | 0.462 | 0.586 | 0.512 | 0.647 | 0.831 | 0.681 | 0.633 | 0.912 | 0.776 |
+| Struct2GO (2023) | 0.481 | 0.873 | 0.661 | 0.658 | 0.942 | 0.763 | **0.701** | **0.969** | **0.796** |
+| StructSeq2GO | 0.485 | 0.764 | 0.688 | 0.681 | 0.939 | 0.763 | 0.663 | 0.891 | 0.702 |
+
+**Lưu ý đọc bảng:** trên benchmark này, **Struct2GO (2023)** vẫn dẫn MFO Fmax (0.701) và AUC
+(0.969); StructSeq2GO chỉ hơn ở BPO Fmax và một số cột AUPR. Đây là lý do AUC ở lineage B
+**bão hoà cao** (0.88–0.97) → khó phân biệt model, củng cố lý do lineage A (PDBch) bỏ AUC.
+
+**Nếu muốn AMPR so được với lineage B:** phải eval lại AMPR trên chính dataset human-AF của
+Struct2GO (cấu trúc AF2 người, 273/809/298 term) — là một thí nghiệm riêng, ngoài phạm vi hiện tại.
+
+---
+
 ## 5. Khuyến nghị trình bày trong luận văn
 
 - Dùng **Fmax (chính) + macro-AUPR (phụ)** làm bộ metric so sánh — đúng chuẩn DeepFRI/HEAL,
@@ -124,4 +160,8 @@ chỉ trình bày như chỉ số phụ của riêng AMPR, kèm giải thích v�
 - Gligorijević et al., "Structure-based protein function prediction using graph convolutional
   networks", *Nature Communications* 12:3168 (2021) — DeepFRI.
 - Kulmanov et al., DeepGO, *Bioinformatics* 34(4) (2018).
+- **Lineage B (human-AF, KHÁC benchmark):** Jiao et al., "Struct2GO", *Bioinformatics* 39(10):btad637
+  (2023); "A unified graph-based approach… (StructSeq2GO)", *Comput. Biol. Chem.* (2025),
+  ScienceDirect S1476927125002701; Lai & Xu, "GAT-GO" (2022); Zhou et al., DeepGOA (2019).
+  Dataset: 20,395 human protein, AlphaFold2, term MFO 273 / BPO 809 / CCO 298.
 - AMPR nội bộ: `docs/RESULTS_DATA.md`, `docs/PHASE_V6_RESULTS.md`, `baselines/HEAL/supplementary-data.md`.
