@@ -4,9 +4,9 @@
 **Spec:** [docs/superpowers/specs/2026-06-13-ampr-swissmodel-expansion-design.md](superpowers/specs/2026-06-13-ampr-swissmodel-expansion-design.md)
 **Plan:** [docs/superpowers/plans/2026-06-13-ampr-swissmodel-expansion.md](superpowers/plans/2026-06-13-ampr-swissmodel-expansion.md)
 
-> **Trạng thái:** MF + CC đã xong (pretrain→finetune + baseline đối chứng, 3 seed, eval đủ bin).
-> **Confound đã gỡ:** baseline 650M-PDB-30K cho kết luận sạch — **pretrain 220K SWISS-MODEL
-> làm HẠI** (xem §3, §5). BP (BCE pretrain) bổ sung sau.
+> **Trạng thái:** HOÀN TẤT cả 3 nhánh (MF/CC/BP), mỗi nhánh pretrain→finetune + baseline
+> đối chứng, 3 seed, eval đủ bin. **Confound đã gỡ — kết luận sạch:** pretrain 220K SWISS-MODEL
+> **làm HẠI** ở cả 3 nhánh, mọi bin (xem §3, §5).
 
 ---
 
@@ -51,9 +51,10 @@ Full-test các metric khác: MF ens Smin=0.619 AUPRC=0.563; CC ens Smin=0.774 AU
 | **AMPR 650M-PDB-30K baseline** | 29,902 PDB | ESM-2 650M | **0.654** | **0.566** |
 | **AMPR-B (220K→30K)** | 220K → 30K | ESM-2 650M | 0.622 | 0.535 |
 
-**BP (full test Fmax):** AMPR-B (220K→30K, BCE-pretrain) dag **0.398** / +DIAMOND **0.521**
-— đã *thấp hơn* DeepFRI (~0.54) và AMPR-30K-3B (0.539). Baseline BP 650M-PDB-30K **chờ chạy**
-(configs `bp_v6_pdb30base_s*`) để xác nhận pretrain hại cho BP như MF/CC.
+**BP (full test Fmax, +DIAMOND):** baseline 650M-PDB-30K **0.530** vs AMPR-B(220K→30K) **0.521**
+(Δ−0.009); dag thuần 0.506 vs 0.398 (**−0.109**). Pretrain thua baseline ở mọi bin → **cùng kết
+luận MF/CC**. Lưu ý: BP baseline 650M (0.530) hơi *dưới* 3B cũ (0.539) — với nhánh khó nhất,
+hạ 3B→650M mất ~0.01 (khác MF, nơi 650M vượt 3B).
 
 ### Đối chứng sạch — pretrain SWISS-MODEL làm HẠI (cùng 650M, cùng recipe)
 
@@ -106,10 +107,14 @@ Configs: `configs/{mf,cc,bp}_v6_pdb30base_s{42,123,2024}.yaml` (sinh bởi
   trúc homology-model (SWISS-MODEL) làm suy giảm dự đoán chức năng trên cấu trúc thực nghiệm,
   ngay cả khi đã finetune — nhiễu cấu trúc của homology model có hại, không chỉ vô ích."*
   Đây là phản-ví dụ cho phương pháp "MERGED" của DeepFRI khi xét riêng modality cấu trúc.
-- **Hệ quả hành động:** chốt **650M-PDB-30K làm model chính thức** (đã vượt DeepFRI & 3B cũ);
-  bỏ nhánh pretrain SWISS-MODEL.
-- BP: collapse ASL đã chữa bằng BCE (đóng góp phương pháp luận, xem
-  [[ampr-phase3-mf-collapse-fix]]); số BP bổ sung khi chạy xong — kỳ vọng cùng xu hướng.
+- **Xác nhận cả 3 nhánh:** pretrain thua baseline ở mọi bin — MF Δ−0.032, CC Δ−0.031,
+  BP Δ−0.009 (full ens); model thuần MF −0.13, CC −0.05, BP −0.11. Kết luận nhất quán.
+- **Hệ quả hành động:** **bỏ nhánh pretrain SWISS-MODEL.** Model chính thức = PDB-30K (không
+  pretrain). Lựa chọn backbone là trục riêng: 650M ≈ 3B (MF: 650M 0.654 > 3B 0.649; BP: 650M
+  0.530 < 3B 0.539) → giữ **3B-30K cho BP**, **650M-30K cho MF** (hoặc 3B đồng nhất cả 3 nếu
+  ưu tiên BP). CC vẫn trail DeepFRI ở cả hai backbone — vấn đề tách biệt khỏi kết luận v6.
+- BP collapse ASL đã chữa bằng BCE (đóng góp phương pháp luận, xem
+  [[ampr-phase3-mf-collapse-fix]]).
 
 ---
 
