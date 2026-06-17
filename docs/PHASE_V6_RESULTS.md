@@ -51,6 +51,10 @@ Full-test các metric khác: MF ens Smin=0.619 AUPRC=0.563; CC ens Smin=0.774 AU
 | **AMPR 650M-PDB-30K baseline** | 29,902 PDB | ESM-2 650M | **0.654** | **0.566** |
 | **AMPR-B (220K→30K)** | 220K → 30K | ESM-2 650M | 0.622 | 0.535 |
 
+**BP (full test Fmax):** AMPR-B (220K→30K, BCE-pretrain) dag **0.398** / +DIAMOND **0.521**
+— đã *thấp hơn* DeepFRI (~0.54) và AMPR-30K-3B (0.539). Baseline BP 650M-PDB-30K **chờ chạy**
+(configs `bp_v6_pdb30base_s*`) để xác nhận pretrain hại cho BP như MF/CC.
+
 ### Đối chứng sạch — pretrain SWISS-MODEL làm HẠI (cùng 650M, cùng recipe)
 
 | Bin | MF baseline | MF AMPR-B | Δ | CC baseline | CC AMPR-B | Δ |
