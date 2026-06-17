@@ -142,6 +142,44 @@ Struct2GO (cấu trúc AF2 người, 273/809/298 term) — là một thí nghi�
 
 ---
 
+## 7. Lineage A — paper MỚI hơn (post-HEAL, cùng PDBch → so được với AMPR)
+
+Các phương pháp 2024–2025 vẫn đánh giá trên **đúng PDBch test set** (cấu trúc thực nghiệm,
+Fmax/AUPR/Smin) — **ghép thẳng bảng với AMPR được**. Đây là các đối thủ cập nhật cho luận văn.
+
+### 7.1 ProteinRPN (2024) — có số đã verify
+
+Region-proposal trên protein graph. Nguồn: arXiv 2409.00610 (Sep 2024), Bảng 1, **cùng
+dataset DeepFRI/PDBch**. Số chép nguyên:
+
+| Model | MF Fmax | BP Fmax | CC Fmax | MF AUPR | BP AUPR | CC AUPR |
+|---|---|---|---|---|---|---|
+| DeepFRI | 0.625 | 0.540 | 0.613 | 0.495 | 0.261 | 0.274 |
+| HEAL | 0.708 | 0.581 | 0.673 | 0.630 | 0.298 | 0.415 |
+| **ProteinRPN** | **0.754** | **0.618** | **0.691** | **0.683** | **0.344** | **0.459** |
+
+→ ProteinRPN là **SOTA mới trên PDBch MF** (0.754 > HEAL self-report 0.749).
+
+> **⚠️ Cảnh báo nhất quán nguồn:** số HEAL/DeepFRI mà ProteinRPN *tự eval lại* **lệch** so với
+> HEAL self-report (HEAL MF: 0.708 ở ProteinRPN vs **0.749** ở HEAL supp; AUPR 0.630 vs 0.698).
+> → Khi dựng bảng luận văn, **ghi rõ mỗi số lấy từ paper nào**, và lý tưởng dùng **một nguồn
+> nhất quán cho mỗi baseline** (ưu tiên HEAL supp cho DeepFRI/HEAL — §1/§2). Đừng trộn số
+> reproduced với số self-reported trong cùng một cột.
+
+### 7.2 Các paper Lineage-A khác (chưa lấy được số chính xác — cần đọc PDF)
+
+| Paper | Nơi đăng | Ý tưởng | Trạng thái số |
+|---|---|---|---|
+| **DPFunc** | Nat. Commun. 16:70 (2024/25) | domain-guided + structure graph | paywall — số trong paper/supp, **chưa verify** |
+| **GOBeacon** | 2024/25 (PMC12183117) | ensemble + contrastive | cần xác nhận đúng PDBch |
+| **BeProf** | Brief. Bioinform. bbae050 (2024) | **bộ benchmark** (không phải 1 model) | nguồn tổng hợp số nhiều method |
+
+**Khuyến nghị:** lấy số DPFunc từ Nature supplementary (Wang et al. 2024) và đối chiếu với
+BeProf — hai nguồn này nhiều khả năng có bảng PDBch đầy đủ. Tôi có thể trích nếu bạn tải được
+PDF (Nature/Brief.Bioinform. chặn fetch tự động).
+
+---
+
 ## 5. Khuyến nghị trình bày trong luận văn
 
 - Dùng **Fmax (chính) + macro-AUPR (phụ)** làm bộ metric so sánh — đúng chuẩn DeepFRI/HEAL,
