@@ -93,12 +93,17 @@ def main():
     labels_all = np.load(data_cfg['labels'])
     term_ic = (-np.log2(labels_all.mean(axis=0).clip(1e-7, 1.0))).astype('float32')
 
+    # raw (no DAG propagation) — for the DAG-propagation ablation
+    m_raw = compute_all_metrics(labels, probs, term_ic)
+    print(f"[ENS][raw] n_seeds={len(args.checkpoints)} Fmax={m_raw['fmax']:.4f} "
+          f"Smin={m_raw['smin']:.4f} AUPRC_macro={m_raw['auprc_macro']:.4f}")
+
     probs_dag = propagate_scores_upward(probs, dag_np)
     m_dag = compute_all_metrics(labels, probs_dag, term_ic)
     print(f"[ENS][dag] n_seeds={len(args.checkpoints)} Fmax={m_dag['fmax']:.4f} "
           f"Smin={m_dag['smin']:.4f} AUPRC_macro={m_dag['auprc_macro']:.4f}")
     out = {'split': args.split, 'n_seeds': len(args.checkpoints),
-           'checkpoints': args.checkpoints, 'dag': m_dag}
+           'checkpoints': args.checkpoints, 'raw': m_raw, 'dag': m_dag}
 
     inf_cfg = cfg.get('inference', {})
     diamond_tsv = data_cfg.get('diamond_tsv')

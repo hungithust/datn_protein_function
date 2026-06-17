@@ -138,6 +138,44 @@ def compute_smin(y_true, y_pred, term_ic):
     return float(best_smin)
 
 
+def compute_smin_raw(y_true, y_pred, term_ic):
+    """
+    S_min in the UNNORMALIZED (raw-IC) CAFA/DeepFRI form — comparable to the Smin
+    reported by DeepFRI/HEAL (NOT the per-protein-normalized variant in compute_smin).
+
+        ru(t) = mean_i  Σ_c IC(c)·[c∈T_i, c∉P_i(t)]     (mean remaining uncertainty, raw IC)
+        mi(t) = mean_i  Σ_c IC(c)·[c∉T_i, c∈P_i(t)]     (mean misinformation, raw IC)
+        S(t)  = sqrt(ru(t)² + mi(t)²)
+        S_min = min_t S(t)
+
+    NOTE on comparability: raw Smin depends on the IC estimation corpus. DeepFRI
+    estimates IC(t) = -log2(freq) over the TRAINING annotations. Pass a term_ic
+    computed over the same training split for a fair cross-paper comparison.
+    """
+    y_true = np.asarray(y_true, dtype=np.float32)
+    y_pred = np.asarray(y_pred, dtype=np.float32)
+    term_ic = np.asarray(term_ic, dtype=np.float32)
+
+    has_annot = y_true.sum(axis=1) > 0
+    y_true = y_true[has_annot]
+    y_pred = y_pred[has_annot]
+    if len(y_true) == 0:
+        return 0.0
+
+    thresholds = np.linspace(0.0, 1.0, 51)
+    best_smin = np.inf
+    for t in thresholds:
+        pred_bin = (y_pred >= t).astype(np.float32)
+        fn = (1 - pred_bin) * y_true
+        fp = pred_bin * (1 - y_true)
+        ru = (fn * term_ic).sum(axis=1).mean()   # mean over proteins, raw IC
+        mi = (fp * term_ic).sum(axis=1).mean()
+        s = float(np.sqrt(ru ** 2 + mi ** 2))
+        if s < best_smin:
+            best_smin = s
+    return float(best_smin)
+
+
 def compute_auroc(y_true, y_pred):
     """
     Micro and macro AUROC across GO terms with both positive and negative samples.
@@ -192,6 +230,7 @@ def compute_all_metrics(y_true, y_pred, term_ic):
     auprc_macro = compute_auprc(y_true, y_pred)
     auprc_micro = compute_micro_auprc(y_true, y_pred)
     smin = compute_smin(y_true, y_pred, term_ic)
+    smin_raw = compute_smin_raw(y_true, y_pred, term_ic)
     micro_auroc, macro_auroc = compute_auroc(y_true, y_pred)
     coverage = compute_coverage(y_true, y_pred, threshold)
 
@@ -201,6 +240,7 @@ def compute_all_metrics(y_true, y_pred, term_ic):
         'auprc_micro': auprc_micro,
         'auprc_macro': auprc_macro,
         'smin': smin,
+        'smin_raw': smin_raw,
         'micro_auroc': micro_auroc,
         'macro_auroc': macro_auroc,
         'coverage': coverage,
