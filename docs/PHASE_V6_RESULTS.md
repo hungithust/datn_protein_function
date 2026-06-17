@@ -4,9 +4,9 @@
 **Spec:** [docs/superpowers/specs/2026-06-13-ampr-swissmodel-expansion-design.md](superpowers/specs/2026-06-13-ampr-swissmodel-expansion-design.md)
 **Plan:** [docs/superpowers/plans/2026-06-13-ampr-swissmodel-expansion.md](superpowers/plans/2026-06-13-ampr-swissmodel-expansion.md)
 
-> **Trạng thái:** MF + CC đã xong (pretrain→finetune, 3 seed, eval đủ bin).
-> BP đang chạy lại (BCE pretrain). Baseline đối chứng 650M-PDB-30K **đang chờ chạy**
-> (xem §4) — **kết luận cuối phụ thuộc số baseline này.**
+> **Trạng thái:** MF + CC đã xong (pretrain→finetune + baseline đối chứng, 3 seed, eval đủ bin).
+> **Confound đã gỡ:** baseline 650M-PDB-30K cho kết luận sạch — **pretrain 220K SWISS-MODEL
+> làm HẠI** (xem §3, §5). BP (BCE pretrain) bổ sung sau.
 
 ---
 
@@ -47,16 +47,29 @@ Full-test các metric khác: MF ens Smin=0.619 AUPRC=0.563; CC ens Smin=0.774 AU
 | Model | Train data | Backbone | MF | CC |
 |---|---|---|---|---|
 | DeepFRI-MERGED | 220K SWISS-MODEL + PDB | GCN | 0.626 | ~0.61 |
-| AMPR-30K (cũ) | 29,902 PDB | ESM-2 **3B** | **0.649** | trail |
-| **AMPR-B (đây)** | 220K → 30K | ESM-2 **650M** | 0.622 | 0.535 |
-| AMPR 650M-PDB-30K baseline | 29,902 PDB | ESM-2 650M | *(chờ §4)* | *(chờ §4)* |
+| AMPR-30K (cũ) | 29,902 PDB | ESM-2 **3B** | 0.649 | trail |
+| **AMPR 650M-PDB-30K baseline** | 29,902 PDB | ESM-2 650M | **0.654** | **0.566** |
+| **AMPR-B (220K→30K)** | 220K → 30K | ESM-2 650M | 0.622 | 0.535 |
+
+### Đối chứng sạch — pretrain SWISS-MODEL làm HẠI (cùng 650M, cùng recipe)
+
+| Bin | MF baseline | MF AMPR-B | Δ | CC baseline | CC AMPR-B | Δ |
+|---|---|---|---|---|---|---|
+| LT_30 | 0.565 | 0.524 | −0.041 | 0.556 | 0.515 | −0.041 |
+| LT_40 | 0.578 | 0.537 | −0.041 | 0.556 | 0.516 | −0.040 |
+| LT_50 | 0.600 | 0.562 | −0.038 | 0.560 | 0.521 | −0.039 |
+| LT_70 | 0.630 | 0.594 | −0.036 | 0.557 | 0.522 | −0.035 |
+| **full** | **0.654** | **0.622** | **−0.032** | **0.566** | **0.535** | **−0.031** |
+| **full (dag, model thuần)** | **0.644** | **0.515** | **−0.129** | **0.556** | **0.503** | **−0.053** |
 
 **Quan sát:**
-- MF của AMPR-B (0.622) **thấp hơn** cả DeepFRI (0.626) và AMPR-30K-3B (0.649).
-- CC (0.535) **tụt rõ** dưới DeepFRI (~0.61).
-- Gap val→test của model thuần *rộng ra*: MF val 0.665 → test dag 0.515 (gap **0.15**),
-  so với gap ~0.11 của AMPR-30K. → 220K SWISS-MODEL **không** tạo representation tổng
-  quát hơn; điểm số chủ yếu do DIAMOND homology gánh (MF dag 0.515 → +DIAMOND 0.622).
+- Pretrain 220K SWISS-MODEL **thua baseline ở MỌI bin** (MF & CC) → **không trung tính, mà có hại.**
+- Tổn hại tập trung ở **model thuần (dag)**: MF 0.644→0.515 (**−0.13**). DIAMOND homology
+  che bớt nên Δ full chỉ −0.03, nhưng net vẫn âm.
+- Gap val→test của AMPR-B *rộng ra*: MF val 0.665 → test dag 0.515 (gap **0.15**) vs baseline
+  gap nhỏ hơn → pretrain đẩy model fit đặc trưng homology-model **không** chuyển sang PDB sạch.
+- **Backbone không phải vấn đề:** baseline 650M (0.654) *vượt* DeepFRI (0.626) và ≈/hơn
+  AMPR-30K-3B (0.649) nhờ recipe mới (60ep, dropout 0.4). Toàn bộ phần tụt của AMPR-B là **do pretrain**.
 
 ---
 
@@ -75,14 +88,24 @@ Configs: `configs/{mf,cc,bp}_v6_pdb30base_s{42,123,2024}.yaml` (sinh bởi
 
 ---
 
-## 5. Verdict (sơ bộ, theo tiêu chí spec §1)
+## 5. Verdict (theo tiêu chí spec §1) — đã có baseline, kết luận sạch
 
-- **Tiêu chí chính (test ≥ AMPR-30K mọi bin):** ❌ chưa đạt (MF/CC dưới mốc 3B cũ).
-- **Negative result hợp lệ (spec §7):** data-scaling SWISS-MODEL **không** thu hẹp gap
-  val→test; nhiều khả năng do nhiễu homology-model + hạ backbone xuống 650M.
-- **Điểm cần baseline §4 để phát biểu sạch:** liệu ở cùng 650M, 220K có trung tính hay có hại.
-- BP: collapse ASL đã chữa bằng BCE (đóng góp phương pháp luận, xem [[ampr-phase3-mf-collapse-fix]]);
-  số cuối bổ sung khi chạy xong.
+- **Giả thuyết (data-scaling 220K thu hẹp gap val→test) → BÁC BỎ.** Ở cùng backbone 650M
+  và cùng recipe, pretrain SWISS-MODEL **làm giảm** test Fmax ở mọi bin (MF −0.03, CC −0.03
+  full; model thuần MF −0.13). Không phải bão hoà — mà là **suy giảm chủ động**.
+- **Cơ chế:** homology-model SWISS-MODEL nhiễu (contact map dựng từ model, không phải cấu
+  trúc thực nghiệm). Pretrain đẩy biểu diễn fit cái nhiễu đó; finetune 30K không gỡ hết →
+  gap val→test rộng ra (val 0.665 vs test dag 0.515).
+- **Confound đã loại:** baseline 650M (MF 0.654) vượt DeepFRI (0.626) và ≈ 3B cũ (0.649) →
+  việc hạ 3B→650M **không** gây hại; toàn bộ tụt là do pretrain.
+- **Đóng góp luận văn (negative result mạnh, spec §7):** *"Pretrain quy mô lớn trên cấu
+  trúc homology-model (SWISS-MODEL) làm suy giảm dự đoán chức năng trên cấu trúc thực nghiệm,
+  ngay cả khi đã finetune — nhiễu cấu trúc của homology model có hại, không chỉ vô ích."*
+  Đây là phản-ví dụ cho phương pháp "MERGED" của DeepFRI khi xét riêng modality cấu trúc.
+- **Hệ quả hành động:** chốt **650M-PDB-30K làm model chính thức** (đã vượt DeepFRI & 3B cũ);
+  bỏ nhánh pretrain SWISS-MODEL.
+- BP: collapse ASL đã chữa bằng BCE (đóng góp phương pháp luận, xem
+  [[ampr-phase3-mf-collapse-fix]]); số BP bổ sung khi chạy xong — kỳ vọng cùng xu hướng.
 
 ---
 
