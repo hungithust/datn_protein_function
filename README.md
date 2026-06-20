@@ -2,29 +2,44 @@
 
 Deep learning-based protein function prediction with Adaptive Multimodal Representation.
 
-**Thesis:** Dự đoán chức năng protein dựa trên Deep Learning  
+**Thesis:** Dự đoán chức năng protein dựa trên Deep Learning
 **Student:** Nguyen Viet Hung (20224998)
 
 AMPR predicts Gene Ontology (GO) terms for proteins by fusing three modalities —
-**ESM-2 3B** sequence embeddings, a **contact-map GNN** (structure), and **PPI**
-embeddings — with adaptive gating, then enforces the GO hierarchy (True Path Rule).
-Separate models for the three GO branches: **MF**, **BP**, **CC**.
+**ESM-2** sequence embeddings, a **contact-map GNN** (structure), and **DeepGO PPI**
+embeddings — with a cross-modal adaptive-gating fusion, then enforces the GO hierarchy
+(True Path Rule) via a DAG loss. Separate models per GO branch: **MF** (489 terms),
+**BP** (1943), **CC** (320). At inference, model probabilities are DAG-propagated and
+ensembled with a **DIAMOND** sequence-homology baseline.
 
-## Results (held-out test, with DIAMOND homology ensemble)
+> **Pipeline = V3** (`AMPRModelV3`, entry `main.py → _run_v3 / _eval_v3`). The older
+> ProteinBERT/ProstT5/Node2Vec/TFRecord pipeline is deprecated — see
+> [docs/HANH_TRINH_THU_NGHIEM.md](docs/HANH_TRINH_THU_NGHIEM.md) for the full migration story.
 
-| Branch | Fmax (LT_30, novel) | Fmax (LT_95, full test) | vs DeepFRI |
-|---|---|---|---|
-| MF | 0.515 | 0.614 | competitive |
-| BP | **0.460** | **0.507** | **beats DeepFRI** (+0.11–0.18) |
-| CC | **0.515** | 0.538 | beats at LT_30, ~tied at LT_95 |
+## Results (held-out PDBch test, 3-seed ensemble + DIAMOND, Fmax)
 
-AMPR is notably **robust to low sequence identity** (Fmax stays nearly flat from
-high- to low-similarity proteins). Full analysis: [docs/REPORT_v3_esm3b.md](docs/REPORT_v3_esm3b.md).
+| Branch | LT_30 (novel) | **LT_95 (full)** | DeepFRI (LT_95) | HEAL SOTA (LT_95) |
+|---|---|---|---|---|
+| **MF** | 0.524 | **0.654** | 0.626 ✅ beats | 0.749 |
+| **BP** | — | **0.539** | 0.540 ≈ ties | 0.594 |
+| **CC** | 0.515 | **0.566** | 0.612 ❌ trails | 0.687 |
+
+- **MF ensemble beats DeepFRI at every identity bin**; BP essentially ties; CC still
+  trails (limited DIAMOND homology coverage at low identity). All three remain below HEAL.
+- The official model is **PDB-30K, no SWISS-MODEL pretrain** (large-scale homology-model
+  pretrain was tested and *hurt* — clean negative result, see [docs/PHASE_V6_RESULTS.md](docs/PHASE_V6_RESULTS.md)).
+- Backbone is a separate axis: **650M for MF/CC** (≈/> 3B), **3B for BP** (the hardest,
+  longest-tail branch still benefits from capacity).
+- Full identity curve + all metrics: [docs/RESULTS_DATA.md](docs/RESULTS_DATA.md) ·
+  baseline provenance (HEAL supp. Tables S3.1/S3.2): [docs/REPORT_v4_summary.md](docs/REPORT_v4_summary.md).
+
+> ⚠️ Earlier drafts claimed "BP/CC beat DeepFRI" — that was an artifact of a **wrong
+> DeepFRI baseline** later corrected from the HEAL supplementary. Do not cite the old numbers.
 
 ## Inference — predict GO terms for your own proteins
 
 Full-modality inference needs, per protein, a **sequence** (FASTA) and a **structure**
-(a PDB file at `<pdb_dir>/<protein_id>.pdb`; AlphaFold models work). ESM-2 3B requires a GPU.
+(a PDB file at `<pdb_dir>/<protein_id>.pdb`; AlphaFold models work). ESM-2 requires a GPU.
 
 ```bash
 pip install -r requirements.txt          # torch, transformers, h5py, biopython, pyyaml
@@ -54,160 +69,141 @@ P12345        GO:0003824  0.88
 
 A runnable walkthrough is in [notebooks/inference_demo.ipynb](notebooks/inference_demo.ipynb).
 
-## Quick Start
-
-### 1. Setup (Colab/Kaggle)
-
-```bash
-# Install dependencies
-!pip install -r requirements.txt
-
-# Clone repo
-!git clone https://github.com/YOUR_REPO/ampr /content/ampr
-cd /content/ampr
-```
-
-### 2. Download Data
-
-```bash
-!python scripts/01_download_data.py --output data/
-```
-
-Downloads: sequences, GO annotations, PPI data, GO hierarchy.
-
-### 3. Precompute Embeddings (2-4 hours, one-time)
-
-```bash
-!python scripts/02_precompute_embeddings.py --config configs/mf.yaml
-```
-
-Generates: `data/embeddings/{seq,struct,ppi,go_emb}_*.npy`
-
-### 4. Create TFRecords (no contact maps)
-
-```bash
-!python scripts/seq2tfrecord.py \
-  --annot data/nrPDB-GO_annot.tsv \
-  --fasta data/nrPDB-GO_sequences.fasta \
-  --split data/nrPDB-GO_train.txt \
-  --out_prefix data/tfrecords/GO_train \
-  --num_shards 10 --num_threads 2
-```
-
-Repeat for `valid/test` splits.
-
-### 5. Train Models
-
-```bash
-# MF branch
-!python main.py --config configs/mf.yaml
-
-# BP branch
-!python main.py --config configs/bp.yaml
-
-# CC branch
-!python main.py --config configs/cc.yaml
-```
-
-Outputs:
-- `checkpoints/{mf,bp,cc}/best.pt` — trained model
-- `logs/{mf,bp,cc}_train.log` — training log
-- `results/{mf,bp,cc}_predictions.tsv` — test predictions
-
 ## Architecture
 
 ```
-Sequence (1024d)  ─┐
-                   ├→ Project to 512d
-Structure (1024d) ─┤
-                   │  → Gating Network
-PPI (128d)        ─┤  → α_seq, α_3di, α_ppi
-                   │
-                   ├→ Weighted Sum (512d)
-GO Terms (768d) ──┘  → Classifier (Linear + BioBERT)
-                        → Predictions
+ESM-2 residue (650M=1280d / 3B=2560d) ─→ Transformer encoder ─┐
+                                                              │
+Contact map ─→ GCN (node 256d, 3 layers, 10Å threshold) ──────┼→ CrossModal
+                                                              │   Fusion (512d,
+DeepGO PPI (256d) + availability mask ────────────────────────┘   adaptive gating)
+                                                                        │
+GO embedding (SapBERT text + GO-graph, combined 896d) ─→ classifier ←───┘
+                                                          (linear + GO-emb head = "both")
+                                                                        │
+                                                                  per-term logits
 ```
 
-**Loss:** BCE + λ·DAG_loss (enforces GO hierarchy)
+- **Backbones frozen** — only fusion + classifier are trained (cheap, fits one GPU).
+- **Loss:** `L = cls + λ·DAG_loss` (λ=0.5). `cls` = ASL with the *combined* GO embedding,
+  or **BCE + pos_weight** for long-tail branches (BP) where ASL dead-gradient collapses.
+- **GO embedding must be combined** (text+graph, 896d) — text-only collapses.
+
+## Quick Start (8×H200 server / Kaggle)
+
+The project trains on a dedicated 8×H200 server (NVIDIA Open Hackathon). All embeddings
+are **precomputed once**, then only the small fusion+classifier is trained.
+
+### 1. Setup + pull data
+
+```bash
+bash scripts/server_setup.sh          # env, dirs, deps
+bash scripts/pull_kaggle_data.sh      # FASTA, annotations, splits, obo
+python scripts/verify_inputs.py       # gate: confirm all artifacts present & aligned
+```
+
+### 2. Build artifacts (one-time)
+
+```bash
+# Labels, splits, DAG matrices from DeepFRI annotation + go-basic.obo
+python scripts/build_labels_from_annot.py
+python scripts/build_splits_from_deepfri.py
+python scripts/build_dag_from_obo.py
+
+# Sequence embeddings (ESM-2 residue-level, sharded) — pick 650M or 3B
+bash scripts/launch_esm3b_precompute.sh        # → data/embeddings/esm2_*_residue.h5
+
+# PPI (DeepGO) + availability mask
+python scripts/build_ppi_from_deepgo.py        # → ppi_deepgo.npy (+ _mask.npy)
+
+# GO embedding: SapBERT text + GO-graph, then combine
+python scripts/precompute_go_text.py
+python scripts/precompute_go_graph.py
+python scripts/build_go_combined.py            # → go_emb_<branch>_v2.npy (896d)
+
+# Contact maps (test set) + DIAMOND homology baseline
+python scripts/precompute_cmap_test.py         # → data/contact_maps/cmap_all.h5
+bash scripts/run_diamond.sh                    # → data/diamond/diamond_results_<branch>.tsv
+```
+
+### 3. Train (3 seeds per branch for the ensemble)
+
+```bash
+for seed in 42 123 2024; do
+  python main.py --config configs/mf_v3_esm3b.yaml --seed $seed
+done
+# repeat with bp_v3_esm3b.yaml / cc_v3_esm3b.yaml
+```
+
+Outputs per run: `checkpoints/<branch>_v3_esm3b/best.pt`, `logs/<branch>_*_train.log`.
+
+### 4. Evaluate (3-seed ensemble + DIAMOND, all identity bins)
+
+```bash
+cks="checkpoints/mf_v3_esm3b_s42/best.pt checkpoints/mf_v3_esm3b_s123/best.pt checkpoints/mf_v3_esm3b_s2024/best.pt"
+for split in test test_LT_30 test_LT_40 test_LT_50 test_LT_70 test_LT_95; do
+  python scripts/ensemble_eval.py --config configs/mf_v3_esm3b.yaml \
+    --checkpoints $cks --split $split
+done
+```
+
+Single-model eval: `python main.py --config <cfg> --eval-only --checkpoint <best.pt>`.
 
 ## Project Structure
 
 ```
 ampr/
-├── data/          # Dataset loading
-├── embeddings/    # Embedding computation
-├── models/        # Neural architectures
-├── training/      # Training loop + loss
-└── evaluation/    # Metrics (Fmax, Smin, AUPRC)
+├── data/          # AMPRDatasetV3 (residue h5 + cmap + ppi + labels)
+├── embeddings/    # precompute helpers
+├── models/        # AMPRModelV3: GCN, PPI head, CrossModalFusion, classifier
+├── training/      # loss (ASL/BCE + DAG), trainer, contrastive (deprecated)
+└── evaluation/    # Fmax, Smin, AUPRC; stratified by identity bin
 
-configs/           # MF/BP/CC configs
-scripts/           # Data processing scripts
-main.py            # Entry point
-requirements.txt   # Dependencies
-CLAUDE.md          # Project notes (for Claude Code)
+configs/           # <branch>_v3_esm3b.yaml (official), v4/v5/v6 experiments
+scripts/           # precompute, build, ensemble_eval, predict, diamond
+main.py            # entry: _run_v3 (train) / _eval_v3 (eval)
+docs/              # specs, plans, results, experiment journey
 ```
-
-## Key Features
-
-- **Modular design** — clear separation of concerns
-- **Config-driven** — YAML controls all hyperparameters
-- **Colab-first** — no local execution required
-- **Logging explicit** — shapes, counts logged at each step
-- **GPU auto-detect** — seamless CPU fallback
-- **Multi-GPU support** — DataParallel for Kaggle 2x T4
 
 ## Documentation
 
-- [Design Spec](docs/superpowers/specs/2026-04-23-ampr-design.md) — Architecture + data flow
-- [Workflow Guide](AMPR_WORKFLOW.md) — Step-by-step execution
-- [CLAUDE.md](CLAUDE.md) — Project context for Claude Code
+- [docs/HANH_TRINH_THU_NGHIEM.md](docs/HANH_TRINH_THU_NGHIEM.md) — **experiment journey & lessons** (start here)
+- [docs/PHASE_V6_RESULTS.md](docs/PHASE_V6_RESULTS.md) — SWISS-MODEL data-scaling (negative result)
+- [docs/RESULTS_DATA.md](docs/RESULTS_DATA.md) — full per-bin metric appendix
+- [AMPR_WORKFLOW.md](AMPR_WORKFLOW.md) — step-by-step execution guide
+- [CLAUDE.md](CLAUDE.md) — project context for Claude Code
 
 ## Evaluation Metrics
 
-- **Fmax** — optimal F1 score (primary metric)
-- **Smin** — semantic distance metric
-- **AUPRC** — area under precision-recall curve
+- **Fmax** — protein-centric optimal F1 (primary; reported per identity bin LT_30..LT_95)
+- **Smin** — semantic-distance metric (information-content weighted)
+- **AUPRC** — area under precision-recall curve (macro)
 
-Computed per branch (MF/BP/CC) independently.
+Computed per branch (MF/BP/CC) independently, stratified by max train-test sequence identity.
 
 ## Dependencies
 
 ```
 torch==2.3.1
-transformers==4.41.2
-tensorflow==2.16.1
-dgl==2.1.0
-obonet==1.0.0
+transformers==4.41.2     # ESM-2, SapBERT
+dgl==2.1.0               # PPI / GO-graph
+obonet==1.0.0           # go-basic.obo → DAG
+h5py                    # residue embeddings + contact maps
 numpy==1.26.4
 ```
 
-All pinned for Python 3.12.x (Colab/Kaggle).
+Python 3.12.x. Backbones (ESM-2, SapBERT) are frozen — no fine-tuning required.
 
 ## Troubleshooting
 
 | Issue | Solution |
 |---|---|
-| OOM on T4 | Reduce batch_size to 128 |
-| Missing sequences | Check FASTA file not corrupted |
-| NaN loss | Check label normalization |
-| Slow training | Verify GPU usage: `!nvidia-smi` |
-
-## Timeline
-
-| Phase | Time | Hardware |
-|---|---|---|
-| Download + Precompute | 2-4h | T4 GPU |
-| TFRecord creation | 30m | CPU |
-| Train 1 model | 1-2h | T4 GPU |
-| **Total (3 branches)** | **8-10h** | One Colab session |
+| Fmax stuck at ~0.0209 | Dead-gradient collapse — use **BCE + pos_weight** (not ASL text-only); see journey §1 |
+| OOM on 2560d (3B) | Lower `batch_size` to 64 (already default for esm3b) |
+| `verify_inputs.py` fails | An artifact is missing/misaligned — regenerate, don't shim |
+| GPU 0-1 busy (node-07) | Use `CUDA_VISIBLE_DEVICES=2..7` |
+| val ↑ but test flat | Expected — the core problem is the val→test gap (~0.20), not val |
 
 ## Author
 
 Nguyen Viet Hung (nguyenviethungsoicthust@gmail.com)
-
-## Notes
-
-- This is a **Colab-first project** — no local testing
-- All scripts run via `!python` in Jupyter cells
-- Input/output shapes logged explicitly for verification
-- Reproducible across runs: pinned seeds + versions

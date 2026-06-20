@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# scripts/launch_v6_train.sh — stage1 pretrain (220K SM) then stage2 finetune (30K PDB, 3 seeds).
+# Runs branches in parallel across GPUs; finetune seeds sequentially per branch.
+set -euo pipefail
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_DIR"
+mkdir -p logs
+
+run_branch() {  # $1=short  $2=gpu
+  local short="$1" gpu="$2"
+  local pre="checkpoints/${short}_v6sm_pretrain/best.pt"
+  # Stage 1: pretrain (seed 42). Warm-continue from an existing checkpoint if present
+  # (salvages prior pretrain compute; lower LR in config refines rather than disrupts).
+  local warm=""
+  [ -f "$pre" ] && warm="--init-from $pre"
+  CUDA_VISIBLE_DEVICES="$gpu" python main.py --config "configs/${short}_v6sm_pretrain.yaml" $warm \
+    2>&1 | tee "logs/${short}_v6sm_pretrain.run.log"
+  # Stage 2: finetune from the pretrained checkpoint, 3 seeds
+  for seed in 42 123 2024; do
+    CUDA_VISIBLE_DEVICES="$gpu" python main.py \
+      --config "configs/${short}_v6sm_finetune_s${seed}.yaml" \
+      --seed "$seed" --init-from "$pre" \
+      2>&1 | tee "logs/${short}_v6sm_finetune_s${seed}.run.log"
+  done
+}
+
+# NOTE(node-07): GPUs 0-1 are held by another process (~129GiB vllm) — use 2-7 only.
+tmux kill-session -t v6_mf 2>/dev/null || true; tmux new-session -d -s v6_mf "$(declare -f run_branch); run_branch mf 2"
+tmux kill-session -t v6_bp 2>/dev/null || true; tmux new-session -d -s v6_bp "$(declare -f run_branch); run_branch bp 3"
+tmux kill-session -t v6_cc 2>/dev/null || true; tmux new-session -d -s v6_cc "$(declare -f run_branch); run_branch cc 4"
+echo "[v6] launched mf/bp/cc on GPUs 2/3/4 — watch logs/*_v6sm_*.run.log"

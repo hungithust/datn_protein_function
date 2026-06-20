@@ -19,6 +19,20 @@ from ampr.training.loss import AMPRLoss
 logger = logging.getLogger('ampr')
 
 
+def load_checkpoint_weights(model, path, map_location="cpu"):
+    """Load weights from a checkpoint into `model` for stage-2 finetune.
+
+    Accepts either a dict with a 'model' key (our save format) or a bare
+    state_dict. Returns {'epoch', 'missing', 'unexpected'} for logging.
+    """
+    import torch
+    ckpt = torch.load(path, map_location=map_location)
+    state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    epoch = ckpt.get("epoch") if isinstance(ckpt, dict) else None
+    return {"epoch": epoch, "missing": list(missing), "unexpected": list(unexpected)}
+
+
 def _batch_to_model_kwargs(batch: dict, device) -> dict:
     """Extract cmap-related fields and move to device if present."""
     out = {}
@@ -363,39 +377,47 @@ class Trainer:
 
 
 def train_one_epoch_v3(model, loader, loss_fn, optimizer, go_emb, device='cuda',
-                       grad_clip=0.0):
+                       grad_clip=0.0, contrastive_loss_fn=None,
+                       contrastive_weight=0.0):
     """One training epoch over an AMPRDatasetV3 DataLoader.
 
-    Args:
-        model: AMPRModelV3
-        loader: DataLoader with collate_variable_length batches
-        loss_fn: AMPRLoss (supports loss_type='asl')
-        optimizer: torch optimizer
-        go_emb: (C, go_emb_dim) tensor
-        device: 'cpu' or 'cuda'
+    If contrastive_loss_fn is given and contrastive_weight > 0, adds
+    contrastive_weight * L_CL on the projected fused representation z.
 
     Returns:
-        avg_loss: float — loss averaged over proteins in epoch
+        avg_loss: float — total loss averaged over proteins in epoch.
     """
     model.train()
     model.to(device)
     go_emb = go_emb.to(device)
+    use_cl = contrastive_loss_fn is not None and contrastive_weight > 0
     total = 0.0
     n = 0
     grad_norm_first = None
     for batch in loader:
-        batch_dev = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
-        logits = model(batch_dev, go_emb=go_emb)
+        batch_dev = {k: (v.to(device) if torch.is_tensor(v) else v)
+                     for k, v in batch.items()}
+
+        if use_cl:
+            logits, z = model(batch_dev, go_emb=go_emb, return_z=True)
+            feats = model.project_contrastive(z)
+            cl = contrastive_loss_fn(feats, batch_dev['labels'])
+        else:
+            logits = model(batch_dev, go_emb=go_emb)
+            cl = torch.zeros((), device=logits.device)
+
         loss, parts = loss_fn(logits, batch_dev['labels'])
+        loss = loss + contrastive_weight * cl
+
         optimizer.zero_grad()
         loss.backward()
         if grad_norm_first is None:
-            # [DIAG] tổng grad-norm batch đầu mỗi epoch; ~0 => gradient bão hoà (collapse)
             gn = sum(p.grad.detach().norm() ** 2 for p in model.parameters()
                      if p.grad is not None) ** 0.5
             grad_norm_first = float(gn)
             print(f"[DIAG] grad_norm(first batch)={grad_norm_first:.4e} "
-                  f"cls={parts['cls']:.4f} dag={parts['dag']:.4f}")
+                  f"cls={parts['cls']:.4f} dag={parts['dag']:.4f} "
+                  f"cl={float(cl):.4f}")
         if grad_clip and grad_clip > 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
